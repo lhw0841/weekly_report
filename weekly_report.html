@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>주간 업무보고 코드 스니펫 생성기</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/11.1.1/marked.min.js"></script>
+<style>
+  body { font-family: -apple-system, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 16px; color: #222; }
+  h1 { font-size: 22px; }
+  label { display: block; margin-top: 12px; font-size: 14px; font-weight: 600; }
+  input { width: 100%; padding: 8px; margin-top: 4px; box-sizing: border-box; font-size: 14px; }
+  .repo-row { display: flex; gap: 8px; margin-top: 4px; }
+  .repo-row input { margin-top: 0; }
+  button { margin-top: 20px; padding: 10px 20px; font-size: 15px; background: #2563eb; color: white; border: none; border-radius: 6px; cursor: pointer; }
+  button:hover { background: #1d4ed8; }
+  .browseBtn { margin-top: 0; padding: 8px 14px; font-size: 14px; background: #444; white-space: nowrap; }
+  .browseBtn:hover { background: #222; }
+  #result { margin-top: 24px; border-top: 1px solid #e5e5e5; padding-top: 16px; }
+  #result h1, #result h2, #result h3 { margin-top: 20px; }
+  #result pre { background: #f5f5f5; padding: 12px; border-radius: 6px; overflow-x: auto; }
+  #result code { font-family: Menlo, Consolas, monospace; font-size: 13px; }
+  .error { color: #b91c1c; }
+  #downloadBtn { display: none; margin-top: 12px; background: #16a34a; }
+  #downloadBtn:hover { background: #15803d; }
+</style>
+</head>
+<body>
+  <h1>주간 업무보고 코드 스니펫 생성기</h1>
+  <p>git 저장소의 최근 커밋에서 코드 스니펫을 자동으로 뽑아 보고서 초안을 만들어줍니다.</p>
+
+  <label>저장소 경로</label>
+  <div class="repo-row">
+    <input id="repo" placeholder="예: C:\Users\User\project">
+    <button class="browseBtn" onclick="browseFolder()">찾아보기</button>
+  </div>
+
+  <label>시작 시점</label>
+  <input id="since" value="1 week ago">
+
+  <label>종료 시점</label>
+  <input id="until" value="now">
+
+  <label>작성자 (git author, 선택)</label>
+  <input id="author" placeholder="비워두면 전체">
+
+  <label>보고서에 표시할 이름 (선택)</label>
+  <input id="name" placeholder="예: 홍길동 (비워두면 git 작성자명 사용)">
+
+  <button onclick="generate()">생성</button>
+  <button id="downloadBtn" onclick="download()">Markdown 다운로드</button>
+
+  <div id="result"></div>
+
+<script>
+let lastMarkdown = "";
+
+async function browseFolder() {
+  try {
+    const res = await fetch('/browse');
+    const data = await res.json();
+    if (data.path) {
+      document.getElementById('repo').value = data.path;
+    }
+  } catch (e) {
+    alert('폴더 선택창을 열 수 없습니다: ' + e);
+  }
+}
+
+async function generate() {
+  const repo = document.getElementById('repo').value;
+  const since = document.getElementById('since').value;
+  const until = document.getElementById('until').value;
+  const author = document.getElementById('author').value;
+  const name = document.getElementById('name').value;
+  const result = document.getElementById('result');
+  result.innerHTML = "생성 중...";
+
+  try {
+    const res = await fetch('/generate', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({repo, since, until, author, name})
+    });
+    const data = await res.json();
+    if (data.error) {
+      result.innerHTML = '<p class="error">' + data.error + '</p>';
+      document.getElementById('downloadBtn').style.display = 'none';
+      return;
+    }
+    lastMarkdown = data.markdown;
+    result.innerHTML = marked.parse(data.markdown);
+    document.getElementById('downloadBtn').style.display = 'inline-block';
+  } catch (e) {
+    result.innerHTML = '<p class="error">오류: ' + e + '</p>';
+  }
+}
+
+function download() {
+  const blob = new Blob([lastMarkdown], {type: 'text/markdown'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'weekly_report.md';
+  a.click();
+}
+</script>
+</body>
+</html>
