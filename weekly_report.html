@@ -13,8 +13,13 @@
   .repo-row input { margin-top: 0; }
   button { margin-top: 20px; padding: 10px 20px; font-size: 15px; background: #2563eb; color: white; border: none; border-radius: 6px; cursor: pointer; }
   button:hover { background: #1d4ed8; }
-  .browseBtn { margin-top: 0; padding: 8px 14px; font-size: 14px; background: #444; white-space: nowrap; }
-  .browseBtn:hover { background: #222; }
+  .browseBtn, .addBtn { margin-top: 0; padding: 8px 14px; font-size: 14px; background: #444; white-space: nowrap; }
+  .browseBtn:hover, .addBtn:hover { background: #222; }
+  #repoList { list-style: none; padding: 0; margin: 8px 0 0; }
+  #repoList li { display: flex; justify-content: space-between; align-items: center; background: #f5f5f5; padding: 6px 10px; border-radius: 6px; margin-top: 6px; font-size: 13px; }
+  #repoList li button { margin: 0; padding: 2px 8px; font-size: 12px; background: #b91c1c; }
+  #repoList li button:hover { background: #7f1d1d; }
+  #repoList .empty { color: #888; font-size: 13px; background: none; padding: 4px 0; }
   #result { margin-top: 24px; border-top: 1px solid #e5e5e5; padding-top: 16px; }
   #result h1, #result h2, #result h3 { margin-top: 20px; }
   #result pre { background: #f5f5f5; padding: 12px; border-radius: 6px; overflow-x: auto; }
@@ -26,13 +31,15 @@
 </head>
 <body>
   <h1>주간 업무보고 코드 스니펫 생성기</h1>
-  <p>git 저장소의 최근 커밋에서 코드 스니펫을 자동으로 뽑아 보고서 초안을 만들어줍니다.</p>
+  <p>여러 git 저장소의 최근 커밋을 한번에 모아 보고서 초안을 만들어줍니다.</p>
 
-  <label>저장소 경로</label>
+  <label>저장소 경로 추가</label>
   <div class="repo-row">
-    <input id="repo" placeholder="예: C:\Users\User\project">
+    <input id="repoInput" placeholder="예: C:\Users\User\project">
     <button class="browseBtn" onclick="browseFolder()">찾아보기</button>
+    <button class="addBtn" onclick="addTypedRepo()">추가</button>
   </div>
+  <ul id="repoList"></ul>
 
   <label>시작 시점</label>
   <input id="since" value="1 week ago">
@@ -53,13 +60,47 @@
 
 <script>
 let lastMarkdown = "";
+let repos = [];
+
+function renderRepoList() {
+  const ul = document.getElementById('repoList');
+  ul.innerHTML = "";
+  if (repos.length === 0) {
+    ul.innerHTML = '<li class="empty">추가된 저장소가 없습니다.</li>';
+    return;
+  }
+  repos.forEach((r, i) => {
+    const li = document.createElement('li');
+    const span = document.createElement('span');
+    span.textContent = r;
+    const btn = document.createElement('button');
+    btn.textContent = '삭제';
+    btn.onclick = () => { repos.splice(i, 1); renderRepoList(); };
+    li.appendChild(span);
+    li.appendChild(btn);
+    ul.appendChild(li);
+  });
+}
+
+function addRepo(path) {
+  if (path && !repos.includes(path)) {
+    repos.push(path);
+    renderRepoList();
+  }
+}
+
+function addTypedRepo() {
+  const input = document.getElementById('repoInput');
+  addRepo(input.value.trim());
+  input.value = "";
+}
 
 async function browseFolder() {
   try {
     const res = await fetch('/browse');
     const data = await res.json();
     if (data.path) {
-      document.getElementById('repo').value = data.path;
+      addRepo(data.path);
     }
   } catch (e) {
     alert('폴더 선택창을 열 수 없습니다: ' + e);
@@ -67,19 +108,24 @@ async function browseFolder() {
 }
 
 async function generate() {
-  const repo = document.getElementById('repo').value;
   const since = document.getElementById('since').value;
   const until = document.getElementById('until').value;
   const author = document.getElementById('author').value;
   const name = document.getElementById('name').value;
   const result = document.getElementById('result');
+
+  if (repos.length === 0) {
+    result.innerHTML = '<p class="error">저장소를 하나 이상 추가해주세요.</p>';
+    return;
+  }
+
   result.innerHTML = "생성 중...";
 
   try {
     const res = await fetch('/generate', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({repo, since, until, author, name})
+      body: JSON.stringify({repos, since, until, author, name})
     });
     const data = await res.json();
     if (data.error) {
@@ -102,6 +148,8 @@ function download() {
   a.download = 'weekly_report.md';
   a.click();
 }
+
+renderRepoList();
 </script>
 </body>
 </html>

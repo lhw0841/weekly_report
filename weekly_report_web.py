@@ -48,13 +48,16 @@ def get_commit_hashes(repo, since, until, author, max_commits):
     return [h for h in out.splitlines() if h.strip()][:max_commits]
 
 
-def get_commit_info(repo, commit_hash):
+def get_commit_info(repo, commit_hash, repo_label=None):
     meta = run_git(repo, ["show", "-s", "--format=%h|%an|%ad|%s", "--date=short", commit_hash]).strip()
     short_hash, author, date, subject = meta.split("|", 3)
     files = run_git(repo, ["show", "--stat", "--format=", commit_hash]).strip()
     file_lines = [l.strip() for l in files.splitlines() if l.strip()]
     diff = run_git(repo, ["show", "--format=", "--unified=1", commit_hash])
-    return {"hash": short_hash, "author": author, "date": date, "subject": subject, "files": file_lines, "diff": diff}
+    return {
+        "hash": short_hash, "author": author, "date": date, "subject": subject,
+        "files": file_lines, "diff": diff, "repo": repo_label or Path(repo).name,
+    }
 
 
 def extract_snippet(diff, max_lines):
@@ -102,12 +105,15 @@ def build_markdown(commits, name):
     next_start_dt = end_dt + timedelta(days=1)
     next_end_dt = end_dt + timedelta(days=5)
 
+    multi_repo = len({c.get("repo") for c in ordered}) > 1
+
     out = []
 
     # 1) 참고용: 이번 주 커밋 내역 (근거 자료)
     out.append("## 이번 주 커밋 내역 (참고)\n")
     for c in ordered:
-        out.append(f"- `{c['hash']}` {c['date']} - {c['subject']} (작성자: {c['author']})")
+        prefix = f"[{c['repo']}] " if multi_repo else ""
+        out.append(f"- {prefix}`{c['hash']}` {c['date']} - {c['subject']} (작성자: {c['author']})")
     out.append("")
     out.append("---")
     out.append("")
@@ -117,7 +123,8 @@ def build_markdown(commits, name):
     out.append(f"# 주간보고 _ {display_name} (참고)\n")
     out.append(f"**금주 업무 내용 : {fmt_md(start_date)}~{fmt_md(end_date)}**\n")
     for i, c in enumerate(ordered, 1):
-        out.append(f"{i}. {c['subject']}")
+        prefix = f"[{c['repo']}] " if multi_repo else ""
+        out.append(f"{i}. {prefix}{c['subject']}")
     out.append("")
     out.append(f"**차주 업무 내용 : {fmt_md(next_start_dt.strftime('%Y-%m-%d'))}~{fmt_md(next_end_dt.strftime('%Y-%m-%d'))}**\n")
     out.append("1. ")
@@ -154,29 +161,40 @@ def browse():
 @app.route("/generate", methods=["POST"])
 def generate():
     data = request.get_json(silent=True) or {}
-    repo = data.get("repo", "").strip()
+
+    # 여러 저장소 (신규) + 기존 단일 repo 필드 둘 다 지원
+    repos = data.get("repos") or []
+    single = data.get("repo", "").strip()
+    if single:
+        repos = [single] + list(repos)
+    repos = [r.strip() for r in repos if r and r.strip()]
+
     since = data.get("since", "1 week ago").strip() or "1 week ago"
     until = data.get("until", "now").strip() or "now"
     author = data.get("author", "").strip() or None
     name = data.get("name", "").strip() or None
 
-    if not repo:
-        return {"error": "저장소 경로를 입력해주세요."}
+    if not repos:
+        return {"error": "저장소 경로를 하나 이상 입력해주세요."}
 
-    repo_path = Path(repo).expanduser()
-    if repo_path.name == ".git":
-        repo_path = repo_path.parent
-    if not repo_path.exists():
-        return {"error": f"경로를 찾을 수 없습니다: {repo}"}
+    all_commits = []
+    for repo in repos:
+        repo_path = Path(repo).expanduser()
+        if repo_path.name == ".git":
+            repo_path = repo_path.parent
+        if not repo_path.exists():
+            return {"error": f"경로를 찾을 수 없습니다: {repo}"}
 
-    try:
-        resolved = str(repo_path.resolve())
-        hashes = get_commit_hashes(resolved, since, until, author, 30)
-        commits = [get_commit_info(resolved, h) for h in hashes]
-        md = build_markdown(commits, name)
-        return {"markdown": md}
-    except Exception as e:
-        return {"error": str(e)}
+        try:
+            resolved = str(repo_path.resolve())
+            label = repo_path.name
+            hashes = get_commit_hashes(resolved, since, until, author, 30)
+            all_commits += [get_commit_info(resolved, h, repo_label=label) for h in hashes]
+        except Exception as e:
+            return {"error": f"[{repo}] {e}"}
+
+    md = build_markdown(all_commits, name)
+    return {"markdown": md}
 
 
 if __name__ == "__main__":
