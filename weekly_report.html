@@ -41,11 +41,11 @@
   </div>
   <ul id="repoList"></ul>
 
-  <label>시작 시점</label>
-  <input id="since" value="1 week ago">
+  <label>시작 날짜</label>
+  <input id="since" type="date">
 
-  <label>종료 시점</label>
-  <input id="until" value="now">
+  <label>종료 날짜</label>
+  <input id="until" type="date">
 
   <label>작성자 (git author, 선택)</label>
   <input id="author" placeholder="비워두면 전체">
@@ -109,7 +109,9 @@ async function browseFolder() {
 
 async function generate() {
   const since = document.getElementById('since').value;
-  const until = document.getElementById('until').value;
+  const untilRaw = document.getElementById('until').value;
+  // until 날짜는 그날 23:59:59까지 포함되도록 처리
+  const until = untilRaw ? untilRaw + " 23:59:59" : "";
   const author = document.getElementById('author').value;
   const name = document.getElementById('name').value;
   const result = document.getElementById('result');
@@ -148,6 +150,18 @@ function download() {
   a.download = 'weekly_report.md';
   a.click();
 }
+
+function isoDate(d) {
+  return d.toISOString().slice(0, 10);
+}
+
+(function setDefaultDates() {
+  const today = new Date();
+  const weekAgo = new Date();
+  weekAgo.setDate(today.getDate() - 7);
+  document.getElementById('since').value = isoDate(weekAgo);
+  document.getElementById('until').value = isoDate(today);
+})();
 
 renderRepoList();
 </script>
