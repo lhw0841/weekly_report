@@ -23,79 +23,15 @@
 """
 
 import argparse
-import subprocess
 import sys
 from pathlib import Path
 
-
-def run_git(repo: str, args: list[str]) -> str:
-    result = subprocess.run(
-        ["git", "-C", repo] + args,
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        print(f"[git 오류] {' '.join(args)}\n{result.stderr}", file=sys.stderr)
-        sys.exit(1)
-    return result.stdout
-
-
-def get_commit_hashes(repo: str, since: str, until: str, author: str | None, max_commits: int) -> list[str]:
-    args = ["log", f"--since={since}", f"--until={until}", "--pretty=format:%H"]
-    if author:
-        args += [f"--author={author}"]
-    out = run_git(repo, args)
-    hashes = [h for h in out.splitlines() if h.strip()]
-    return hashes[:max_commits]
-
-
-def get_commit_info(repo: str, commit_hash: str) -> dict:
-    meta = run_git(
-        repo,
-        ["show", "-s", "--format=%h|%an|%ad|%s", "--date=short", commit_hash],
-    ).strip()
-    short_hash, author, date, subject = meta.split("|", 3)
-
-    files = run_git(repo, ["show", "--stat", "--format=", commit_hash]).strip()
-    file_lines = [l.strip() for l in files.splitlines() if l.strip()]
-
-    diff = run_git(repo, ["show", "--format=", "--unified=1", commit_hash])
-
-    return {
-        "hash": short_hash,
-        "author": author,
-        "date": date,
-        "subject": subject,
-        "files": file_lines,
-        "diff": diff,
-    }
-
-
-def extract_snippet(diff: str, max_lines: int) -> str:
-    """diff에서 실제 추가/수정된 코드 라인(+로 시작, 헤더 제외)만 추려서 스니펫으로 만든다."""
-    lines = []
-    for line in diff.splitlines():
-        if line.startswith("+++") or line.startswith("---"):
-            continue
-        if line.startswith("+"):
-            lines.append(line[1:])
-        if len(lines) >= max_lines:
-            break
-    return "\n".join(lines) if lines else "(변경 코드 없음 - 파일 삭제/이동 등)"
-
-
-def guess_lang(files: list[str]) -> str:
-    exts = {
-        ".py": "python", ".js": "javascript", ".ts": "typescript", ".tsx": "tsx",
-        ".jsx": "jsx", ".java": "java", ".kt": "kotlin", ".go": "go", ".rb": "ruby",
-        ".c": "c", ".cpp": "cpp", ".cs": "csharp", ".sql": "sql", ".sh": "bash",
-        ".yml": "yaml", ".yaml": "yaml", ".json": "json", ".html": "html", ".css": "css",
-    }
-    for f in files:
-        for ext, lang in exts.items():
-            if ext in f:
-                return lang
-    return ""
+from weekly_report_core import (
+    extract_snippet,
+    get_commit_hashes,
+    get_commit_info,
+    guess_lang,
+)
 
 
 def build_markdown(commits: list[dict], max_lines: int) -> str:
@@ -129,8 +65,12 @@ def main():
     args = parser.parse_args()
 
     repo = str(Path(args.repo).expanduser().resolve())
-    hashes = get_commit_hashes(repo, args.since, args.until, args.author, args.max_commits)
-    commits = [get_commit_info(repo, h) for h in hashes]
+    try:
+        hashes = get_commit_hashes(repo, args.since, args.until, args.author, args.max_commits)
+        commits = [get_commit_info(repo, h) for h in hashes]
+    except RuntimeError as e:
+        print(f"[git 오류] {e}", file=sys.stderr)
+        sys.exit(1)
 
     md = build_markdown(commits, args.max_lines)
 

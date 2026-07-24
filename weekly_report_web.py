@@ -14,76 +14,15 @@ Markdown 파일로 다운로드할 수 있습니다.
 그 다음 브라우저에서 http://127.0.0.1:5050 접속
 """
 
-import subprocess
-import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
 from flask import Flask, request, Response, send_file
 
+from weekly_report_core import get_commit_hashes, get_commit_info
+
 app = Flask(__name__)
 HTML_FILE = Path(__file__).parent / "weekly_report.html"
-
-
-# ---------- git 로직 (weekly_report_snippets.py와 동일) ----------
-
-def run_git(repo: str, args: list[str]) -> str:
-    result = subprocess.run(
-        ["git", "-C", repo] + args,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
-    if result.returncode != 0:
-        raise RuntimeError(result.stderr.strip() or "git 명령 실행 실패")
-    return result.stdout
-
-
-def get_commit_hashes(repo, since, until, author, max_commits):
-    args = ["log", f"--since={since}", f"--until={until}", "--pretty=format:%H"]
-    if author:
-        args += [f"--author={author}"]
-    out = run_git(repo, args)
-    return [h for h in out.splitlines() if h.strip()][:max_commits]
-
-
-def get_commit_info(repo, commit_hash, repo_label=None):
-    meta = run_git(repo, ["show", "-s", "--format=%h|%an|%ad|%s", "--date=short", commit_hash]).strip()
-    short_hash, author, date, subject = meta.split("|", 3)
-    files = run_git(repo, ["show", "--stat", "--format=", commit_hash]).strip()
-    file_lines = [l.strip() for l in files.splitlines() if l.strip()]
-    diff = run_git(repo, ["show", "--format=", "--unified=1", commit_hash])
-    return {
-        "hash": short_hash, "author": author, "date": date, "subject": subject,
-        "files": file_lines, "diff": diff, "repo": repo_label or Path(repo).name,
-    }
-
-
-def extract_snippet(diff, max_lines):
-    lines = []
-    for line in diff.splitlines():
-        if line.startswith("+++") or line.startswith("---"):
-            continue
-        if line.startswith("+"):
-            lines.append(line[1:])
-        if len(lines) >= max_lines:
-            break
-    return "\n".join(lines) if lines else "(변경 코드 없음 - 파일 삭제/이동 등)"
-
-
-def guess_lang(files):
-    exts = {
-        ".py": "python", ".js": "javascript", ".ts": "typescript", ".tsx": "tsx",
-        ".jsx": "jsx", ".java": "java", ".kt": "kotlin", ".go": "go", ".rb": "ruby",
-        ".c": "c", ".cpp": "cpp", ".cs": "csharp", ".sql": "sql", ".sh": "bash",
-        ".yml": "yaml", ".yaml": "yaml", ".json": "json", ".html": "html", ".css": "css",
-    }
-    for f in files:
-        for ext, lang in exts.items():
-            if ext in f:
-                return lang
-    return ""
 
 
 def fmt_md(date_str: str) -> str:

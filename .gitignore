@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+
+# 생성된 산출물 (실행할 때마다 덮어써짐)
+weekly_report_draft.md
