@@ -35,7 +35,8 @@
 
   <label>저장소 경로 추가</label>
   <div class="repo-row">
-    <input id="repoInput" placeholder="예: C:\Users\User\project">
+    <input id="repoInput" list="repoHistory" placeholder="예: C:\Users\User\project">
+    <datalist id="repoHistory"></datalist>
     <button class="browseBtn" onclick="browseFolder()">찾아보기</button>
     <button class="addBtn" onclick="addTypedRepo()">추가</button>
   </div>
@@ -60,7 +61,33 @@
 
 <script>
 let lastMarkdown = "";
-let repos = [];
+
+const REPOS_KEY = "wr_repos";
+const REPO_HISTORY_KEY = "wr_repo_history";
+const REPO_HISTORY_MAX = 20;
+
+let repos = JSON.parse(localStorage.getItem(REPOS_KEY) || "[]");
+let repoHistory = JSON.parse(localStorage.getItem(REPO_HISTORY_KEY) || "[]");
+
+function saveRepos() {
+  localStorage.setItem(REPOS_KEY, JSON.stringify(repos));
+}
+
+function rememberRepoHistory(path) {
+  repoHistory = [path, ...repoHistory.filter(p => p !== path)].slice(0, REPO_HISTORY_MAX);
+  localStorage.setItem(REPO_HISTORY_KEY, JSON.stringify(repoHistory));
+  renderRepoHistory();
+}
+
+function renderRepoHistory() {
+  const list = document.getElementById('repoHistory');
+  list.innerHTML = "";
+  repoHistory.forEach(path => {
+    const option = document.createElement('option');
+    option.value = path;
+    list.appendChild(option);
+  });
+}
 
 function renderRepoList() {
   const ul = document.getElementById('repoList');
@@ -75,7 +102,7 @@ function renderRepoList() {
     span.textContent = r;
     const btn = document.createElement('button');
     btn.textContent = '삭제';
-    btn.onclick = () => { repos.splice(i, 1); renderRepoList(); };
+    btn.onclick = () => { repos.splice(i, 1); saveRepos(); renderRepoList(); };
     li.appendChild(span);
     li.appendChild(btn);
     ul.appendChild(li);
@@ -85,6 +112,8 @@ function renderRepoList() {
 function addRepo(path) {
   if (path && !repos.includes(path)) {
     repos.push(path);
+    saveRepos();
+    rememberRepoHistory(path);
     renderRepoList();
   }
 }
@@ -164,6 +193,7 @@ function isoDate(d) {
 })();
 
 renderRepoList();
+renderRepoHistory();
 </script>
 </body>
 </html>
