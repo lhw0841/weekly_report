@@ -24,7 +24,7 @@ from weekly_report_github import (
     get_authenticated_username,
     get_github_commits,
     github_commit_to_info,
-    is_github_repo,
+    normalize_github_repo,
     search_user_commits,
 )
 
@@ -132,12 +132,13 @@ def generate():
 
     all_commits = []
     for repo in repos:
-        if is_github_repo(repo):
+        owner_repo = normalize_github_repo(repo)
+        if owner_repo:
             try:
-                commits_json = get_github_commits(repo, since, until, author, github_token, 30)
+                commits_json = get_github_commits(owner_repo, since, until, author, github_token, 30)
             except Exception as e:
                 return {"error": f"[{repo}] {e}"}
-            label = repo.split("/")[-1]
+            label = owner_repo.split("/")[-1]
             all_commits += [github_commit_to_info(c, label) for c in commits_json]
             continue
 

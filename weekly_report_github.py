@@ -14,11 +14,26 @@ import requests
 
 GITHUB_API = "https://api.github.com"
 REPO_PATTERN = re.compile(r"^[\w.-]+/[\w.-]+$")
+GITHUB_URL_PATTERN = re.compile(
+    r"^(?:https?://github\.com/|git@github\.com:)([\w.-]+)/([\w.-]+?)(?:\.git)?/?$"
+)
+
+
+def normalize_github_repo(repo: str) -> str | None:
+    """'owner/repo', GitHub URL(https/git@) 모두 'owner/repo' 형태로 정규화한다.
+    로컬 경로 등 GitHub 저장소로 볼 수 없으면 None을 반환한다."""
+    repo = repo.strip()
+    m = GITHUB_URL_PATTERN.match(repo)
+    if m:
+        return f"{m.group(1)}/{m.group(2)}"
+    if REPO_PATTERN.match(repo) and "\\" not in repo:
+        return repo
+    return None
 
 
 def is_github_repo(repo: str) -> bool:
-    """'owner/repo' 형식이면 GitHub API 대상으로 간주한다 (로컬 경로와 구분)."""
-    return bool(REPO_PATTERN.match(repo)) and "\\" not in repo
+    """GitHub 저장소(owner/repo 또는 GitHub URL)로 볼 수 있으면 True (로컬 경로와 구분)."""
+    return normalize_github_repo(repo) is not None
 
 
 def _to_iso8601(date_str: str) -> str | None:
