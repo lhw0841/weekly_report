@@ -6,79 +6,186 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/11.1.1/marked.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <style>
-  body { font-family: -apple-system, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 16px; color: #222; }
-  h1 { font-size: 22px; }
-  #authBar { display: flex; justify-content: flex-end; align-items: center; gap: 10px; padding: 10px 0; font-size: 13px; color: #555; }
-  #authBar img { width: 24px; height: 24px; border-radius: 50%; }
-  #authBar button { margin: 0; padding: 6px 12px; font-size: 13px; background: #24292f; }
+  :root {
+    --bg: #f1f5f9;
+    --card: #ffffff;
+    --border: #e5e7eb;
+    --text: #1f2937;
+    --text-dim: #6b7280;
+    --accent: #2563eb;
+    --accent-hover: #1d4ed8;
+    --danger: #dc2626;
+    --danger-hover: #b91c1c;
+    --success: #16a34a;
+    --success-hover: #15803d;
+    --chip-bg: #f3f4f6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --border: #334155;
+      --text: #e5e7eb;
+      --text-dim: #94a3b8;
+      --chip-bg: #334155;
+    }
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    margin: 0;
+    padding: 32px 16px 64px;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+  }
+
+  .page { max-width: 720px; margin: 0 auto; }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 28px 32px 32px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  }
+
+  h1 { font-size: 21px; font-weight: 700; margin: 0 0 6px; }
+  .subtitle { color: var(--text-dim); font-size: 14px; margin: 0; }
+
+  #authBar {
+    display: flex; justify-content: flex-end; align-items: center; gap: 10px;
+    margin-bottom: 16px; font-size: 13px; color: var(--text-dim);
+  }
+  #authBar img { width: 26px; height: 26px; border-radius: 50%; }
+  #authBar button {
+    margin: 0; padding: 6px 14px; font-size: 13px; font-weight: 500;
+    background: #24292f; color: #fff; border: none; border-radius: 8px; cursor: pointer;
+  }
   #authBar button:hover { background: #000; }
-  #loggedOutNotice { color: #888; font-size: 13px; margin-top: 4px; }
-  label { display: block; margin-top: 12px; font-size: 14px; font-weight: 600; }
-  input { width: 100%; padding: 8px; margin-top: 4px; box-sizing: border-box; font-size: 14px; }
-  .repo-row { display: flex; gap: 8px; margin-top: 4px; }
-  .repo-row input { margin-top: 0; }
-  button { margin-top: 20px; padding: 10px 20px; font-size: 15px; background: #2563eb; color: white; border: none; border-radius: 6px; cursor: pointer; }
-  button:hover { background: #1d4ed8; }
-  .addBtn { margin-top: 0; padding: 8px 14px; font-size: 14px; background: #444; white-space: nowrap; }
-  .addBtn:hover { background: #222; }
-  #repoList { list-style: none; padding: 0; margin: 8px 0 0; }
-  #repoList li { display: flex; justify-content: space-between; align-items: center; background: #f5f5f5; padding: 6px 10px; border-radius: 6px; margin-top: 6px; font-size: 13px; }
-  #repoList li button { margin: 0; padding: 2px 8px; font-size: 12px; background: #b91c1c; }
-  #repoList li button:hover { background: #7f1d1d; }
-  #repoList .empty { color: #888; font-size: 13px; background: none; padding: 4px 0; }
-  #result { margin-top: 24px; border-top: 1px solid #e5e5e5; padding-top: 16px; }
+
+  #loggedOutNotice { color: var(--text-dim); font-size: 13px; margin: 10px 0 0; }
+
+  fieldset { border: none; padding: 0; margin: 20px 0 0; }
+
+  label {
+    display: block; margin-top: 18px; margin-bottom: 6px;
+    font-size: 13px; font-weight: 600; color: var(--text-dim);
+    text-transform: uppercase; letter-spacing: 0.02em;
+  }
+  label:first-of-type { margin-top: 0; }
+
+  input {
+    width: 100%; padding: 10px 12px; font-size: 14px;
+    background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px;
+    transition: border-color 0.15s;
+  }
+  input::placeholder { color: var(--text-dim); }
+  input:focus {
+    outline: none; border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(37,99,235,0.15);
+  }
+
+  .repo-row { display: flex; gap: 8px; }
+
+  button {
+    padding: 11px 22px; font-size: 14px; font-weight: 600;
+    background: var(--accent); color: white; border: none;
+    border-radius: 8px; cursor: pointer; transition: background 0.15s;
+  }
+  button:hover { background: var(--accent-hover); }
+
+  .addBtn { padding: 10px 16px; font-size: 14px; background: #4b5563; white-space: nowrap; }
+  .addBtn:hover { background: #374151; }
+
+  .primaryRow { margin-top: 24px; display: flex; gap: 10px; flex-wrap: wrap; }
+
+  #repoList { list-style: none; padding: 0; margin: 10px 0 0; display: flex; flex-direction: column; gap: 6px; }
+  #repoList li {
+    display: flex; justify-content: space-between; align-items: center;
+    background: var(--chip-bg); padding: 8px 12px; border-radius: 8px; font-size: 13px;
+  }
+  #repoList li button { margin: 0; padding: 4px 10px; font-size: 12px; background: var(--danger); }
+  #repoList li button:hover { background: var(--danger-hover); }
+  #repoList .empty { color: var(--text-dim); background: none; padding: 4px 0; }
+
+  #githubAutoNotice {
+    display: none;
+    background: var(--chip-bg); border-radius: 8px; padding: 10px 14px;
+    color: var(--text-dim); font-size: 13px; margin-top: 16px;
+  }
+
+  #result { margin-top: 28px; border-top: 1px solid var(--border); padding-top: 20px; }
+  #result:empty { display: none; }
   #result h1, #result h2, #result h3 { margin-top: 20px; }
-  #result pre { background: #f5f5f5; padding: 12px; border-radius: 6px; overflow-x: auto; }
+  #result pre { background: var(--chip-bg); padding: 12px; border-radius: 8px; overflow-x: auto; }
   #result code { font-family: Menlo, Consolas, monospace; font-size: 13px; }
-  .error { color: #b91c1c; }
-  #downloadBtn { display: none; margin-top: 12px; background: #16a34a; }
-  #downloadBtn:hover { background: #15803d; }
-  #historySection { display: none; margin-top: 20px; }
-  #historySection h3 { font-size: 14px; margin: 0 0 6px; }
-  #historyList { list-style: none; padding: 0; margin: 0; }
-  #historyList li { font-size: 13px; padding: 6px 8px; background: #f5f5f5; border-radius: 6px; margin-top: 4px; cursor: pointer; }
-  #historyList li:hover { background: #e5e5e5; }
+  .error { color: var(--danger); font-size: 14px; }
+
+  #downloadBtn { display: none; background: var(--success); }
+  #downloadBtn:hover { background: var(--success-hover); }
+
+  #historySection { display: none; margin-top: 28px; border-top: 1px solid var(--border); padding-top: 20px; }
+  #historySection h3 {
+    font-size: 12px; font-weight: 700; margin: 0 0 10px; color: var(--text-dim);
+    text-transform: uppercase; letter-spacing: 0.03em;
+  }
+  #historyList { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+  #historyList li {
+    font-size: 13px; padding: 8px 12px; background: var(--chip-bg);
+    border-radius: 8px; cursor: pointer; transition: background 0.15s;
+  }
+  #historyList li:hover { background: var(--border); }
 </style>
 </head>
 <body>
-  <div id="authBar"></div>
+  <div class="page">
+    <div id="authBar"></div>
 
-  <h1>주간 업무보고 커밋 내역 생성기</h1>
-  <p>여러 git 저장소의 최근 커밋을 한번에 모아 보고서 초안을 만들어줍니다.</p>
-  <p id="loggedOutNotice">(선택) GitHub로 로그인하면 추후 클라우드 저장 등 부가 기능을 이용할 수 있습니다.</p>
+    <div class="card">
+      <h1>주간 업무보고 커밋 내역 생성기</h1>
+      <p class="subtitle">여러 git 저장소의 최근 커밋을 한번에 모아 보고서 초안을 만들어줍니다.</p>
+      <p id="loggedOutNotice">(선택) GitHub로 로그인하면 추후 클라우드 저장 등 부가 기능을 이용할 수 있습니다.</p>
 
-  <div id="mainApp">
-    <div id="localRepoSection">
-      <label>저장소 경로 추가</label>
-      <div class="repo-row">
-        <input id="repoInput" list="repoHistory" placeholder="예: C:\Users\User\project\.git 또는 owner/repo (GitHub)">
-        <datalist id="repoHistory"></datalist>
-        <button class="addBtn" onclick="addTypedRepo()">추가</button>
+      <div id="mainApp">
+        <div id="localRepoSection">
+          <label>저장소 경로 추가</label>
+          <div class="repo-row">
+            <input id="repoInput" list="repoHistory" placeholder="예: C:\Users\User\project\.git 또는 owner/repo (GitHub)">
+            <datalist id="repoHistory"></datalist>
+            <button class="addBtn" onclick="addTypedRepo()">추가</button>
+          </div>
+          <ul id="repoList"></ul>
+
+          <label>작성자 (git author, 선택)</label>
+          <input id="author" placeholder="비워두면 전체">
+        </div>
+        <p id="githubAutoNotice">GitHub 로그인 상태이므로, 접근 가능한 모든 저장소에서 아래 기간 동안 작성한 본인 커밋을 자동으로 가져옵니다.</p>
+
+        <label>시작 날짜</label>
+        <input id="since" type="date">
+
+        <label>종료 날짜</label>
+        <input id="until" type="date">
+
+        <label>보고서에 표시할 이름 (선택)</label>
+        <input id="name" placeholder="예: 홍길동 (비워두면 git 작성자명 사용)">
+
+        <div class="primaryRow">
+          <button onclick="generate()">생성</button>
+          <button id="downloadBtn" onclick="download()">Markdown 다운로드</button>
+        </div>
+
+        <div id="result"></div>
+
+        <div id="historySection">
+          <h3>최근 생성 이력 (클라우드)</h3>
+          <ul id="historyList"></ul>
+        </div>
       </div>
-      <ul id="repoList"></ul>
-
-      <label>작성자 (git author, 선택)</label>
-      <input id="author" placeholder="비워두면 전체">
-    </div>
-    <p id="githubAutoNotice" style="display:none; color:#888; font-size:13px; margin-top:12px;">GitHub 로그인 상태이므로, 접근 가능한 모든 저장소에서 아래 기간 동안 작성한 본인 커밋을 자동으로 가져옵니다.</p>
-
-    <label>시작 날짜</label>
-    <input id="since" type="date">
-
-    <label>종료 날짜</label>
-    <input id="until" type="date">
-
-    <label>보고서에 표시할 이름 (선택)</label>
-    <input id="name" placeholder="예: 홍길동 (비워두면 git 작성자명 사용)">
-
-    <button onclick="generate()">생성</button>
-    <button id="downloadBtn" onclick="download()">Markdown 다운로드</button>
-
-    <div id="result"></div>
-
-    <div id="historySection">
-      <h3>최근 생성 이력 (클라우드)</h3>
-      <ul id="historyList"></ul>
     </div>
   </div>
 

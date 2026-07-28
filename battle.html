@@ -11,10 +11,10 @@
   #hud h1 { font-size: 16px; margin: 0; font-weight: 600; }
   #hud a { color: #9ca3af; font-size: 12px; text-decoration: none; }
   #legend { position: fixed; top: 48px; left: 16px; font-size: 13px; z-index: 10; }
-  #legend .row { display: flex; align-items: center; gap: 6px; margin-top: 4px; background: rgba(0,0,0,0.35); padding: 4px 8px; border-radius: 6px; }
+  #legend .row { display: flex; align-items: center; gap: 6px; margin-top: 4px; background: rgba(15,20,30,0.55); backdrop-filter: blur(4px); padding: 5px 10px; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.3); }
   #legend .row.dead { opacity: 0.4; text-decoration: line-through; }
-  #legend .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
-  #log { position: fixed; bottom: 0; left: 0; right: 0; max-height: 160px; overflow-y: auto; background: rgba(0,0,0,0.55); padding: 10px 16px; font-size: 13px; line-height: 1.6; z-index: 10; }
+  #legend .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; box-shadow: 0 0 6px currentColor; }
+  #log { position: fixed; bottom: 0; left: 0; right: 0; max-height: 160px; overflow-y: auto; background: rgba(10,14,22,0.7); backdrop-filter: blur(6px); padding: 10px 16px; font-size: 13px; line-height: 1.6; z-index: 10; }
   #log .winner { color: #fbbf24; font-weight: 700; }
   #status { position: fixed; top: 48px; right: 16px; font-size: 13px; z-index: 10; color: #9ca3af; }
   canvas { display: block; }
@@ -50,15 +50,80 @@ const WANDER_SPEED = 0.9;        // 난전 중 이동 속도
 const MAX_BATTLE_SECONDS = 90; // 병사들이 서로 못 만나고 떠도는 경우를 대비한 안전장치
 
 let scene, camera, renderer, clock;
-let empires = []; // {name, color, castleGroup, castleAlive, unitsTotal}
+let empires = []; // {name, color, castleGroup, castleAlive, unitsTotal, flagMesh}
 let units = [];   // {mesh, empireIndex, dir:Vector3, cooldown, alive}
 let battleOver = false;
 let elapsed = 0;
+let camAngle = 0;
+
+function makeSkyTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 2; canvas.height = 256;
+  const ctx = canvas.getContext('2d');
+  const grad = ctx.createLinearGradient(0, 0, 0, 256);
+  grad.addColorStop(0, '#4f8fd6');
+  grad.addColorStop(0.55, '#a7d4f0');
+  grad.addColorStop(1, '#e8f6ee');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 2, 256);
+  return new THREE.CanvasTexture(canvas);
+}
+
+function makeGrassTexture() {
+  const size = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#4caf50';
+  ctx.fillRect(0, 0, size, size);
+  for (let i = 0; i < 1400; i++) {
+    ctx.globalAlpha = 0.35 + Math.random() * 0.25;
+    ctx.fillStyle = Math.random() < 0.5 ? '#3f9142' : '#66c86e';
+    const x = Math.random() * size, y = Math.random() * size;
+    ctx.beginPath();
+    ctx.arc(x, y, 1 + Math.random() * 2.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(10, 10);
+  return tex;
+}
+
+function addDecorations() {
+  const trunkMat = new THREE.MeshStandardMaterial({ color: 0x7a5230, roughness: 1 });
+  const leafMat = new THREE.MeshStandardMaterial({ color: 0x2e7d32, roughness: 0.9 });
+  const rockMat = new THREE.MeshStandardMaterial({ color: 0x9aa0a6, roughness: 1 });
+
+  for (let i = 0; i < 34; i++) {
+    const r = 15 + Math.random() * 21;
+    const a = Math.random() * Math.PI * 2;
+    const x = Math.cos(a) * r, z = Math.sin(a) * r;
+
+    if (Math.random() < 0.65) {
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.18, 1.1, 6), trunkMat);
+      trunk.position.set(x, 0.55, z);
+      trunk.castShadow = true;
+      scene.add(trunk);
+      const leaves = new THREE.Mesh(new THREE.ConeGeometry(0.8 + Math.random() * 0.3, 1.6, 8), leafMat);
+      leaves.position.set(x, 1.75, z);
+      leaves.castShadow = true;
+      scene.add(leaves);
+    } else {
+      const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(0.3 + Math.random() * 0.25, 0), rockMat);
+      rock.position.set(x, 0.25, z);
+      rock.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, 0);
+      rock.castShadow = true;
+      scene.add(rock);
+    }
+  }
+}
 
 function initThree() {
   scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x8fd3ff);
-  scene.fog = new THREE.Fog(0x8fd3ff, 20, 55);
+  scene.background = makeSkyTexture();
+  scene.fog = new THREE.Fog(0xa7d4f0, 24, 58);
 
   camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 120);
   camera.position.set(0, 15, 20);
@@ -66,31 +131,30 @@ function initThree() {
 
   renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   document.body.appendChild(renderer.domElement);
 
-  const ambient = new THREE.AmbientLight(0xffffff, 0.7);
+  const ambient = new THREE.AmbientLight(0xffffff, 0.55);
   scene.add(ambient);
-  const dir = new THREE.DirectionalLight(0xffffff, 0.9);
-  dir.position.set(8, 15, 8);
-  scene.add(dir);
+  const sun = new THREE.DirectionalLight(0xfff4e0, 1.0);
+  sun.position.set(10, 18, 6);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(1024, 1024);
+  sun.shadow.camera.left = -28; sun.shadow.camera.right = 28;
+  sun.shadow.camera.top = 28; sun.shadow.camera.bottom = -28;
+  sun.shadow.camera.near = 1; sun.shadow.camera.far = 50;
+  scene.add(sun);
 
   // 초록 평야
   const groundGeo = new THREE.CircleGeometry(40, 48);
-  const groundMat = new THREE.MeshStandardMaterial({ color: 0x4caf50 });
+  const groundMat = new THREE.MeshStandardMaterial({ map: makeGrassTexture(), roughness: 0.95 });
   const ground = new THREE.Mesh(groundGeo, groundMat);
   ground.rotation.x = -Math.PI / 2;
+  ground.receiveShadow = true;
   scene.add(ground);
 
-  // 약간의 잔디 질감 (작은 랜덤 점 패치)
-  const patchMat = new THREE.MeshStandardMaterial({ color: 0x3f9142 });
-  for (let i = 0; i < 60; i++) {
-    const r = Math.random() * 38;
-    const a = Math.random() * Math.PI * 2;
-    const patch = new THREE.Mesh(new THREE.CircleGeometry(0.8 + Math.random() * 1.2, 8), patchMat);
-    patch.rotation.x = -Math.PI / 2;
-    patch.position.set(Math.cos(a) * r, 0.01, Math.sin(a) * r);
-    scene.add(patch);
-  }
+  addDecorations();
 
   window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
@@ -113,36 +177,55 @@ function layoutEmpires(n) {
 
 function buildCastle(color, homePos) {
   const group = new THREE.Group();
-  const wallMat = new THREE.MeshStandardMaterial({ color: 0x9ca3af });
-  const roofMat = new THREE.MeshStandardMaterial({ color });
+  const wallMat = new THREE.MeshStandardMaterial({ color: 0xb8bcc4, roughness: 0.85 });
+  const roofMat = new THREE.MeshStandardMaterial({ color, roughness: 0.6, metalness: 0.1 });
+  const darkMat = new THREE.MeshStandardMaterial({ color: 0x2b2f36, roughness: 0.9 });
 
-  const keep = new THREE.Mesh(new THREE.BoxGeometry(2.2, 2.2, 2.2), wallMat);
+  const addShadow = (mesh) => { mesh.castShadow = true; mesh.receiveShadow = true; return mesh; };
+
+  const keep = addShadow(new THREE.Mesh(new THREE.BoxGeometry(2.2, 2.2, 2.2), wallMat));
   keep.position.y = 1.1;
   group.add(keep);
 
-  const roof = new THREE.Mesh(new THREE.ConeGeometry(1.7, 1.4, 4), roofMat);
+  // 문
+  const door = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.9, 0.05), darkMat);
+  door.position.set(0, 0.45, 1.13);
+  group.add(door);
+
+  // 창문
+  [[-0.6, 1.6], [0.6, 1.6]].forEach(([x, y]) => {
+    const win = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 0.05), darkMat);
+    win.position.set(x, y, 1.13);
+    group.add(win);
+  });
+
+  const roof = addShadow(new THREE.Mesh(new THREE.ConeGeometry(1.7, 1.4, 4), roofMat));
   roof.position.y = 2.9;
   roof.rotation.y = Math.PI / 4;
   group.add(roof);
 
   [[-1.4, -1.4], [1.4, -1.4], [-1.4, 1.4], [1.4, 1.4]].forEach(([x, z]) => {
-    const tower = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 2.6, 8), wallMat);
+    const tower = addShadow(new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.45, 2.6, 8), wallMat));
     tower.position.set(x, 1.3, z);
     group.add(tower);
-    const cap = new THREE.Mesh(new THREE.ConeGeometry(0.5, 0.8, 8), roofMat);
+    const cap = addShadow(new THREE.Mesh(new THREE.ConeGeometry(0.5, 0.8, 8), roofMat));
     cap.position.set(x, 3.0, z);
     group.add(cap);
   });
 
-  // 깃발
-  const flag = new THREE.Mesh(new THREE.ConeGeometry(0.4, 1, 4), roofMat);
-  flag.position.y = 3.8;
-  group.add(flag);
+  // 깃발 (펄럭이는 애니메이션용으로 별도 그룹에 담음)
+  const flagPole = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.2, 6), darkMat);
+  flagPole.position.y = 3.6;
+  group.add(flagPole);
+
+  const flagCloth = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.4), new THREE.MeshStandardMaterial({ color, side: THREE.DoubleSide }));
+  flagCloth.position.set(0.32, 4.05, 0);
+  group.add(flagCloth);
 
   group.position.copy(homePos);
   group.lookAt(0, group.position.y, 0);
   scene.add(group);
-  return group;
+  return { group, flagCloth };
 }
 
 function pickWanderTarget() {
@@ -154,8 +237,11 @@ function pickWanderTarget() {
 function spawnUnits(empireIndex, color, homePos, count) {
   const dirToCenter = homePos.clone().negate().normalize();
   const perRow = Math.ceil(Math.sqrt(count));
-  const mat = new THREE.MeshStandardMaterial({ color });
-  const geo = new THREE.SphereGeometry(0.2, 12, 10);
+  const mat = new THREE.MeshStandardMaterial({
+    color, roughness: 0.35, metalness: 0.15,
+    emissive: color, emissiveIntensity: 0.18,
+  });
+  const geo = new THREE.SphereGeometry(0.2, 14, 12);
 
   // 진군 방향에 수직인 축(측면으로 대열을 펼치기 위함)
   const side = new THREE.Vector3(-dirToCenter.z, 0, dirToCenter.x);
@@ -165,6 +251,7 @@ function spawnUnits(empireIndex, color, homePos, count) {
     const col = i % perRow - perRow / 2;
 
     const mesh = new THREE.Mesh(geo, mat);
+    mesh.castShadow = true;
     const spawnPos = homePos.clone()
       .addScaledVector(dirToCenter, 1.8 + row * 0.55)
       .addScaledVector(side, col * 0.5);
@@ -206,9 +293,36 @@ function log(html, cls) {
   el.scrollTop = el.scrollHeight;
 }
 
+function spawnBurst(position, color) {
+  const burstMat = new THREE.MeshBasicMaterial({ color });
+  const particles = [];
+  for (let i = 0; i < 7; i++) {
+    const p = new THREE.Mesh(new THREE.SphereGeometry(0.045, 6, 6), burstMat);
+    p.position.copy(position);
+    scene.add(p);
+    const dir = new THREE.Vector3(Math.random() - 0.5, Math.random() * 0.8 + 0.2, Math.random() - 0.5).normalize();
+    particles.push({ mesh: p, dir });
+  }
+  const start = performance.now();
+  const step = () => {
+    const t = (performance.now() - start) / 450;
+    if (t >= 1) {
+      particles.forEach(p => scene.remove(p.mesh));
+      return;
+    }
+    particles.forEach(p => {
+      p.mesh.position.addScaledVector(p.dir, 0.045);
+      p.mesh.scale.setScalar(1 - t);
+    });
+    requestAnimationFrame(step);
+  };
+  step();
+}
+
 function killUnit(u) {
   u.alive = false;
   const mesh = u.mesh;
+  spawnBurst(mesh.position, mesh.material.color.getHex());
   const start = performance.now();
   const shrink = () => {
     const t = (performance.now() - start) / 200;
@@ -217,7 +331,7 @@ function killUnit(u) {
       return;
     }
     mesh.scale.setScalar(1 - t);
-    mesh.position.y = 0.2 - t * 0.2;
+    mesh.position.y = 0.16 - t * 0.16;
     requestAnimationFrame(shrink);
   };
   shrink();
@@ -315,7 +429,17 @@ function animate() {
     resolveEliminations();
     updateLegend();
     checkVictory();
+
+    // 깃발 펄럭임
+    empires.forEach(e => {
+      if (e.flagCloth) e.flagCloth.rotation.y = Math.sin(elapsed * 3) * 0.3;
+    });
   }
+
+  // 카메라 천천히 선회 (전투가 끝나도 계속)
+  camAngle += 0.0015;
+  camera.position.set(Math.sin(camAngle) * 24, 15, Math.cos(camAngle) * 24);
+  camera.lookAt(0, 0.5, 0);
 
   renderer.render(scene, camera);
 }
@@ -357,8 +481,11 @@ async function loadEmpires() {
   const positions = layoutEmpires(data.empires.length);
   empires = data.empires.map((e, i) => {
     const color = COLORS[i % COLORS.length];
-    const castleGroup = buildCastle(color, positions[i]);
-    return { name: e.name, color, castleGroup, castleAlive: true, unitsTotal: e.soldiers, homePos: positions[i] };
+    const castle = buildCastle(color, positions[i]);
+    return {
+      name: e.name, color, castleGroup: castle.group, flagCloth: castle.flagCloth,
+      castleAlive: true, unitsTotal: e.soldiers, homePos: positions[i],
+    };
   });
 
   data.empires.forEach((e, i) => {
