@@ -33,6 +33,11 @@
   .error { color: #b91c1c; }
   #downloadBtn { display: none; margin-top: 12px; background: #16a34a; }
   #downloadBtn:hover { background: #15803d; }
+  #historySection { display: none; margin-top: 20px; }
+  #historySection h3 { font-size: 14px; margin: 0 0 6px; }
+  #historyList { list-style: none; padding: 0; margin: 0; }
+  #historyList li { font-size: 13px; padding: 6px 8px; background: #f5f5f5; border-radius: 6px; margin-top: 4px; cursor: pointer; }
+  #historyList li:hover { background: #e5e5e5; }
 </style>
 </head>
 <body>
@@ -68,6 +73,11 @@
     <button id="downloadBtn" onclick="download()">Markdown 다운로드</button>
 
     <div id="result"></div>
+
+    <div id="historySection">
+      <h3>최근 생성 이력 (클라우드)</h3>
+      <ul id="historyList"></ul>
+    </div>
   </div>
 
 <script>
@@ -77,9 +87,11 @@ const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_
 let currentSession = null;
 
 function renderAuthBar(session) {
+  const wasLoggedIn = !!currentSession;
   currentSession = session;
   const bar = document.getElementById('authBar');
   const notice = document.getElementById('loggedOutNotice');
+  const historySection = document.getElementById('historySection');
 
   if (session && session.user) {
     const meta = session.user.user_metadata || {};
@@ -92,6 +104,12 @@ function renderAuthBar(session) {
     bar.appendChild(logoutBtn);
 
     notice.style.display = 'none';
+    historySection.style.display = 'block';
+
+    if (!wasLoggedIn) {
+      syncReposOnLogin();
+      loadReportHistory();
+    }
   } else {
     bar.innerHTML = "";
     const loginBtn = document.createElement('button');
@@ -100,6 +118,7 @@ function renderAuthBar(session) {
     bar.appendChild(loginBtn);
 
     notice.style.display = 'block';
+    historySection.style.display = 'none';
   }
 }
 
@@ -167,7 +186,12 @@ function renderRepoList() {
     span.textContent = r;
     const btn = document.createElement('button');
     btn.textContent = '삭제';
-    btn.onclick = () => { repos.splice(i, 1); saveRepos(); renderRepoList(); };
+    btn.onclick = () => {
+      repos.splice(i, 1);
+      saveRepos();
+      renderRepoList();
+      if (currentSession) removeCloudRepo(r);
+    };
     li.appendChild(span);
     li.appendChild(btn);
     ul.appendChild(li);
@@ -180,7 +204,87 @@ function addRepo(path) {
     saveRepos();
     rememberRepoHistory(path);
     renderRepoList();
+    if (currentSession) addCloudRepo(path);
   }
+}
+
+// ---------- 로그인 시 클라우드(Supabase) 저장소 목록 동기화 ----------
+
+async function addCloudRepo(path) {
+  try {
+    await supabaseClient.from('saved_repos').insert({ user_id: currentSession.user.id, repo: path });
+  } catch (e) {
+    console.error('클라우드 저장소 저장 실패', e);
+  }
+}
+
+async function removeCloudRepo(path) {
+  try {
+    await supabaseClient.from('saved_repos').delete().eq('user_id', currentSession.user.id).eq('repo', path);
+  } catch (e) {
+    console.error('클라우드 저장소 삭제 실패', e);
+  }
+}
+
+async function syncReposOnLogin() {
+  const { data, error } = await supabaseClient.from('saved_repos').select('repo').order('created_at');
+  if (error) {
+    console.error('클라우드 저장소 조회 실패', error);
+    return;
+  }
+  const cloudRepos = data.map(r => r.repo);
+
+  // 로컬에만 있던 저장소는 클라우드로 올려준다
+  const localOnly = repos.filter(r => !cloudRepos.includes(r));
+  for (const r of localOnly) {
+    await addCloudRepo(r);
+  }
+
+  repos = [...new Set([...cloudRepos, ...repos])];
+  saveRepos();
+  renderRepoList();
+}
+
+// ---------- 생성 이력 (클라우드) ----------
+
+async function saveReportToCloud(markdown, since, until) {
+  try {
+    await supabaseClient.from('reports').insert({
+      user_id: currentSession.user.id, markdown, since: since || null, until: (until || '').slice(0, 10) || null
+    });
+    loadReportHistory();
+  } catch (e) {
+    console.error('이력 저장 실패', e);
+  }
+}
+
+async function loadReportHistory() {
+  const { data, error } = await supabaseClient
+    .from('reports')
+    .select('id, markdown, since, until, created_at')
+    .order('created_at', { ascending: false })
+    .limit(5);
+  if (error) {
+    console.error('이력 조회 실패', error);
+    return;
+  }
+  const list = document.getElementById('historyList');
+  list.innerHTML = "";
+  if (data.length === 0) {
+    list.innerHTML = '<li style="cursor:default;">아직 생성 이력이 없습니다.</li>';
+    return;
+  }
+  data.forEach(r => {
+    const li = document.createElement('li');
+    const created = new Date(r.created_at).toLocaleString('ko-KR');
+    li.textContent = `${r.since || '?'} ~ ${r.until || '?'} (${created})`;
+    li.onclick = () => {
+      lastMarkdown = r.markdown;
+      document.getElementById('result').innerHTML = marked.parse(r.markdown);
+      document.getElementById('downloadBtn').style.display = 'inline-block';
+    };
+    list.appendChild(li);
+  });
 }
 
 function addTypedRepo() {
@@ -233,6 +337,7 @@ async function generate() {
     lastMarkdown = data.markdown;
     result.innerHTML = marked.parse(data.markdown);
     document.getElementById('downloadBtn').style.display = 'inline-block';
+    if (currentSession) saveReportToCloud(data.markdown, since, until);
   } catch (e) {
     result.innerHTML = '<p class="error">오류: ' + e + '</p>';
   }

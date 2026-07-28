@@ -1,0 +1,36 @@
+-- 사용자별 저장소 목록 (기존 localStorage 대체)
+create table if not exists saved_repos (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users(id) on delete cascade not null,
+  repo text not null,
+  created_at timestamptz default now(),
+  unique(user_id, repo)
+);
+
+alter table saved_repos enable row level security;
+
+create policy "select own repos" on saved_repos
+  for select using (auth.uid() = user_id);
+create policy "insert own repos" on saved_repos
+  for insert with check (auth.uid() = user_id);
+create policy "delete own repos" on saved_repos
+  for delete using (auth.uid() = user_id);
+
+-- 생성된 주간보고 이력
+create table if not exists reports (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users(id) on delete cascade not null,
+  markdown text not null,
+  since date,
+  until date,
+  created_at timestamptz default now()
+);
+
+alter table reports enable row level security;
+
+create policy "select own reports" on reports
+  for select using (auth.uid() = user_id);
+create policy "insert own reports" on reports
+  for insert with check (auth.uid() = user_id);
+create policy "delete own reports" on reports
+  for delete using (auth.uid() = user_id);
