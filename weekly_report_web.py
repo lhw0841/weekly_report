@@ -16,6 +16,7 @@ Markdown 파일로 다운로드할 수 있습니다.
 
 # Vercel 재배포 트리거용 빈 커밋
 
+from collections import Counter
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -159,40 +160,26 @@ def battle():
 
 @app.route("/battle_data", methods=["POST"])
 def battle_data():
-    """등록된 저장소별 커밋 수를 병력 규모로 변환해 돌려준다."""
+    """로그인한 사용자의 기간 내 커밋을 저장소별로 묶어 병력 규모로 변환해 돌려준다."""
     data = request.get_json(silent=True) or {}
-    repos = [r.strip() for r in (data.get("repos") or []) if r and r.strip()]
     since = data.get("since", "1 week ago").strip() or "1 week ago"
     until = data.get("until", "now").strip() or "now"
     github_token = data.get("github_token") or None
 
-    if not repos:
-        return {"error": "저장소를 하나 이상 입력해주세요."}
+    if not github_token:
+        return {"error": "GitHub 로그인이 필요합니다."}
 
-    empires = []
-    for repo in repos:
-        owner_repo = normalize_github_repo(repo)
-        if owner_repo:
-            try:
-                commits_json = get_github_commits(owner_repo, since, until, None, github_token, 500)
-            except Exception as e:
-                return {"error": f"[{repo}] {e}"}
-            empires.append({"name": owner_repo.split("/")[-1], "soldiers": max(len(commits_json), 1)})
-            continue
+    try:
+        username = get_authenticated_username(github_token)
+        commits_json = search_user_commits(username, since, until, github_token, 100)
+    except Exception as e:
+        return {"error": str(e)}
 
-        repo_path = Path(repo).expanduser()
-        if repo_path.name == ".git":
-            repo_path = repo_path.parent
-        if not repo_path.exists():
-            return {"error": f"경로를 찾을 수 없습니다: {repo}"}
+    counts = Counter(c["repo"] for c in commits_json)
+    empires = [{"name": name, "soldiers": count} for name, count in counts.items()]
 
-        try:
-            resolved = str(repo_path.resolve())
-            hashes = get_commit_hashes(resolved, since, until, None, 500)
-        except Exception as e:
-            return {"error": f"[{repo}] {e}"}
-
-        empires.append({"name": repo_path.name, "soldiers": max(len(hashes), 1)})
+    if len(empires) < 2:
+        return {"error": "해당 기간 동안 2개 이상의 저장소에서 활동한 기록이 있어야 전쟁이 가능합니다."}
 
     return {"empires": empires}
 
