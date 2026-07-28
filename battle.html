@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>커밋 전쟁 시뮬레이터</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<style>
+  body { font-family: -apple-system, sans-serif; margin: 0; background: #0b0f1a; color: #eee; }
+  #hud { position: fixed; top: 0; left: 0; right: 0; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.4); z-index: 10; }
+  #hud h1 { font-size: 16px; margin: 0; font-weight: 600; }
+  #hud a { color: #9ca3af; font-size: 12px; text-decoration: none; }
+  #legend { position: fixed; top: 48px; left: 16px; font-size: 13px; z-index: 10; }
+  #legend .row { display: flex; align-items: center; gap: 6px; margin-top: 4px; background: rgba(0,0,0,0.35); padding: 4px 8px; border-radius: 6px; }
+  #legend .row.dead { opacity: 0.4; text-decoration: line-through; }
+  #legend .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  #log { position: fixed; bottom: 0; left: 0; right: 0; max-height: 160px; overflow-y: auto; background: rgba(0,0,0,0.55); padding: 10px 16px; font-size: 13px; line-height: 1.6; z-index: 10; }
+  #log .winner { color: #fbbf24; font-weight: 700; }
+  #status { position: fixed; top: 48px; right: 16px; font-size: 13px; z-index: 10; color: #9ca3af; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+  <div id="hud">
+    <h1>⚔️ 커밋 전쟁 시뮬레이터</h1>
+    <a href="/">돌아가기</a>
+  </div>
+  <div id="legend"></div>
+  <div id="status">불러오는 중...</div>
+  <div id="log"></div>
+
+<script>
+const REPOS_KEY = "wr_repos";
+const SUPABASE_URL = "https://wjctfmiafwvypmwtnpkn.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndqY3RmbWlhZnd2eXBtd3RucGtuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUxOTEwNDIsImV4cCI6MjEwMDc2NzA0Mn0.hy62BJuf6u-CaLj52wFjOd4RVYPIAtV6cNhIa25W6cg";
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const COLORS = [0xef4444, 0x3b82f6, 0xf59e0b, 0xa855f7, 0x06b6d4, 0xec4899, 0xeab308, 0x22c55e];
+const MAX_UNITS_PER_EMPIRE = 40; // 성능을 위한 상한
+const UNIT_SPEED = 1.6;          // 초당 이동 거리
+const COLLIDE_DIST = 0.55;
+const CASTLE_ASSAULT_DIST = 2.3;
+const BATTLEFIELD_RADIUS = 11;
+const CASTLE_RADIUS = BATTLEFIELD_RADIUS + 3;
+
+const MAX_BATTLE_SECONDS = 90; // 병사들이 서로 못 만나고 떠도는 경우를 대비한 안전장치
+
+let scene, camera, renderer, clock;
+let empires = []; // {name, color, castleGroup, castleAlive, unitsTotal}
+let units = [];   // {mesh, empireIndex, dir:Vector3, cooldown, alive}
+let battleOver = false;
+let elapsed = 0;
+
+function initThree() {
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x8fd3ff);
+  scene.fog = new THREE.Fog(0x8fd3ff, 20, 55);
+
+  camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 120);
+  camera.position.set(0, 15, 20);
+  camera.lookAt(0, 0, 0);
+
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  document.body.appendChild(renderer.domElement);
+
+  const ambient = new THREE.AmbientLight(0xffffff, 0.7);
+  scene.add(ambient);
+  const dir = new THREE.DirectionalLight(0xffffff, 0.9);
+  dir.position.set(8, 15, 8);
+  scene.add(dir);
+
+  // 초록 평야
+  const groundGeo = new THREE.CircleGeometry(40, 48);
+  const groundMat = new THREE.MeshStandardMaterial({ color: 0x4caf50 });
+  const ground = new THREE.Mesh(groundGeo, groundMat);
+  ground.rotation.x = -Math.PI / 2;
+  scene.add(ground);
+
+  // 약간의 잔디 질감 (작은 랜덤 점 패치)
+  const patchMat = new THREE.MeshStandardMaterial({ color: 0x3f9142 });
+  for (let i = 0; i < 60; i++) {
+    const r = Math.random() * 38;
+    const a = Math.random() * Math.PI * 2;
+    const patch = new THREE.Mesh(new THREE.CircleGeometry(0.8 + Math.random() * 1.2, 8), patchMat);
+    patch.rotation.x = -Math.PI / 2;
+    patch.position.set(Math.cos(a) * r, 0.01, Math.sin(a) * r);
+    scene.add(patch);
+  }
+
+  window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+
+  clock = new THREE.Clock();
+  animate();
+}
+
+function layoutEmpires(n) {
+  const positions = [];
+  for (let i = 0; i < n; i++) {
+    const angle = (i / n) * Math.PI * 2;
+    positions.push(new THREE.Vector3(Math.cos(angle) * CASTLE_RADIUS, 0, Math.sin(angle) * CASTLE_RADIUS));
+  }
+  return positions;
+}
+
+function buildCastle(color, homePos) {
+  const group = new THREE.Group();
+  const wallMat = new THREE.MeshStandardMaterial({ color: 0x9ca3af });
+  const roofMat = new THREE.MeshStandardMaterial({ color });
+
+  const keep = new THREE.Mesh(new THREE.BoxGeometry(2.2, 2.2, 2.2), wallMat);
+  keep.position.y = 1.1;
+  group.add(keep);
+
+  const roof = new THREE.Mesh(new THREE.ConeGeometry(1.7, 1.4, 4), roofMat);
+  roof.position.y = 2.9;
+  roof.rotation.y = Math.PI / 4;
+  group.add(roof);
+
+  [[-1.4, -1.4], [1.4, -1.4], [-1.4, 1.4], [1.4, 1.4]].forEach(([x, z]) => {
+    const tower = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 2.6, 8), wallMat);
+    tower.position.set(x, 1.3, z);
+    group.add(tower);
+    const cap = new THREE.Mesh(new THREE.ConeGeometry(0.5, 0.8, 8), roofMat);
+    cap.position.set(x, 3.0, z);
+    group.add(cap);
+  });
+
+  // 깃발
+  const flag = new THREE.Mesh(new THREE.ConeGeometry(0.4, 1, 4), roofMat);
+  flag.position.y = 3.8;
+  group.add(flag);
+
+  group.position.copy(homePos);
+  group.lookAt(0, group.position.y, 0);
+  scene.add(group);
+  return group;
+}
+
+function spawnUnits(empireIndex, color, homePos, count) {
+  const dirToCenter = homePos.clone().negate().normalize();
+  const perRow = Math.ceil(Math.sqrt(count));
+  const mat = new THREE.MeshStandardMaterial({ color });
+  const geo = new THREE.BoxGeometry(0.4, 0.4, 0.4);
+
+  // 진군 방향에 수직인 축(측면으로 대열을 펼치기 위함)
+  const side = new THREE.Vector3(-dirToCenter.z, 0, dirToCenter.x);
+
+  for (let i = 0; i < count; i++) {
+    const row = Math.floor(i / perRow);
+    const col = i % perRow - perRow / 2;
+
+    const mesh = new THREE.Mesh(geo, mat);
+    const spawnPos = homePos.clone()
+      .addScaledVector(dirToCenter, 1.8 + row * 0.55)
+      .addScaledVector(side, col * 0.5);
+    spawnPos.y = 0.2;
+    mesh.position.copy(spawnPos);
+    scene.add(mesh);
+
+    units.push({
+      mesh,
+      empireIndex,
+      dir: dirToCenter.clone(),
+      cooldown: 0,
+      alive: true,
+    });
+  }
+}
+
+function updateLegend() {
+  const legend = document.getElementById('legend');
+  legend.innerHTML = empires.map((e, i) => {
+    const alive = units.filter(u => u.empireIndex === i && u.alive).length;
+    const dead = alive === 0;
+    return `
+      <div class="row ${dead ? 'dead' : ''}">
+        <span class="dot" style="background:#${e.color.toString(16).padStart(6,'0')}"></span>
+        <span>${e.name}: ${alive}명${dead ? ' (전멸)' : ''}</span>
+      </div>`;
+  }).join('');
+}
+
+function log(html, cls) {
+  const el = document.getElementById('log');
+  const line = document.createElement('div');
+  if (cls) line.className = cls;
+  line.innerHTML = html;
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+}
+
+function killUnit(u) {
+  u.alive = false;
+  const mesh = u.mesh;
+  const start = performance.now();
+  const shrink = () => {
+    const t = (performance.now() - start) / 200;
+    if (t >= 1) {
+      scene.remove(mesh);
+      return;
+    }
+    mesh.scale.setScalar(1 - t);
+    mesh.position.y = 0.2 - t * 0.2;
+    requestAnimationFrame(shrink);
+  };
+  shrink();
+}
+
+function collapseCastle(empire) {
+  empire.castleAlive = false;
+  empire.castleGroup.children.forEach(child => { child.position.y -= 1.4; });
+}
+
+function resolveEliminations() {
+  empires.forEach((e, i) => {
+    if (!e.castleAlive) return;
+    const alive = units.filter(u => u.empireIndex === i && u.alive).length;
+    if (alive === 0) {
+      collapseCastle(e);
+      log(`🏰 ${e.name} 제국이 전멸했습니다.`);
+    }
+  });
+}
+
+function resolveCastleAssaults() {
+  units.forEach(u => {
+    if (!u.alive) return;
+    empires.forEach((target, j) => {
+      if (j === u.empireIndex || !target.castleAlive) return;
+      if (u.mesh.position.distanceTo(target.homePos) < CASTLE_ASSAULT_DIST) {
+        const attacker = empires[u.empireIndex];
+        collapseCastle(target);
+        killUnit(u);
+        log(`🔥 ${attacker.name} 병사가 ${target.name}의 성을 함락시켰습니다!`);
+      }
+    });
+  });
+}
+
+function declareWinner(empire) {
+  battleOver = true;
+  if (empire) {
+    log(`<span class="winner">🏆 ${empire.name} 제국 승리!</span>`, 'winner');
+  } else {
+    log(`<span class="winner">전군 전멸... 무승부</span>`, 'winner');
+  }
+  document.getElementById('status').textContent = "전쟁 종료";
+}
+
+function checkVictory() {
+  const survivors = empires.filter(e => e.castleAlive);
+  if (survivors.length <= 1) {
+    declareWinner(survivors[0] || null);
+    return;
+  }
+  if (elapsed > MAX_BATTLE_SECONDS) {
+    // 시간 초과: 남은 병력이 가장 많은 제국이 승리
+    const byUnits = survivors.map(e => ({
+      e, alive: units.filter(u => u.empireIndex === empires.indexOf(e) && u.alive).length
+    })).sort((a, b) => b.alive - a.alive);
+    declareWinner(byUnits[0].e);
+  }
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = battleOver ? 0 : Math.min(clock.getDelta(), 0.05);
+
+  if (dt > 0) {
+    elapsed += dt;
+
+    // 이동
+    units.forEach(u => {
+      if (!u.alive) return;
+      u.mesh.position.addScaledVector(u.dir, UNIT_SPEED * dt);
+      if (u.cooldown > 0) u.cooldown -= dt;
+      u.mesh.rotation.y += dt * 2;
+    });
+
+    // 충돌 판정 (서로 다른 진영끼리)
+    const alive = units.filter(u => u.alive && u.cooldown <= 0);
+    for (let i = 0; i < alive.length; i++) {
+      const a = alive[i];
+      if (!a.alive) continue;
+      for (let j = i + 1; j < alive.length; j++) {
+        const b = alive[j];
+        if (!b.alive || a.empireIndex === b.empireIndex) continue;
+        if (a.mesh.position.distanceTo(b.mesh.position) < COLLIDE_DIST) {
+          const loser = Math.random() < 0.5 ? a : b;
+          const winner = loser === a ? b : a;
+          killUnit(loser);
+          winner.cooldown = 0.35;
+          break;
+        }
+      }
+    }
+
+    resolveCastleAssaults();
+    resolveEliminations();
+    updateLegend();
+    checkVictory();
+  }
+
+  renderer.render(scene, camera);
+}
+
+async function loadEmpires() {
+  const repos = JSON.parse(localStorage.getItem(REPOS_KEY) || "[]");
+  if (repos.length < 2) {
+    document.getElementById('status').textContent = "저장소가 2개 이상 등록되어 있어야 전쟁이 가능합니다. (메인 화면에서 먼저 등록해주세요)";
+    return;
+  }
+
+  document.getElementById('status').textContent = "커밋 데이터로 병력을 편성하는 중...";
+
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  const githubToken = session?.provider_token || null;
+
+  const res = await fetch('/battle_data', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ repos, since: "2 weeks ago", until: "now", github_token: githubToken })
+  });
+  const data = await res.json();
+
+  if (data.error) {
+    document.getElementById('status').textContent = "오류: " + data.error;
+    return;
+  }
+
+  document.getElementById('status').textContent = "";
+  initThree();
+
+  const positions = layoutEmpires(data.empires.length);
+  empires = data.empires.map((e, i) => {
+    const color = COLORS[i % COLORS.length];
+    const castleGroup = buildCastle(color, positions[i]);
+    return { name: e.name, color, castleGroup, castleAlive: true, unitsTotal: e.soldiers, homePos: positions[i] };
+  });
+
+  data.empires.forEach((e, i) => {
+    const count = Math.min(e.soldiers, MAX_UNITS_PER_EMPIRE);
+    spawnUnits(i, empires[i].color, positions[i], count);
+  });
+
+  updateLegend();
+  log(`${empires.map(e => e.name + '(' + e.unitsTotal + '명)').join(' vs ')} 전쟁 시작! 병력이 평야 중앙으로 진군합니다.`);
+}
+
+loadEmpires();
+</script>
+</body>
+</html>

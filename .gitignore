@@ -6,8 +6,3 @@ __pycache__/
 
 # 생성된 산출물 (실행할 때마다 덮어써짐)
 weekly_report_draft.md
-
-# 로컬 전용 확장 기능 (비공개)
-battle.html
-local_ext.py
-local_ext.js

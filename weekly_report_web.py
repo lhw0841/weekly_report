@@ -32,7 +32,7 @@ from weekly_report_github import (
 
 app = Flask(__name__)
 HTML_FILE = Path(__file__).parent / "weekly_report.html"
-LOCAL_EXT_JS = Path(__file__).parent / "local_ext.js"
+EXTRA_HTML_FILE = Path(__file__).parent / "battle.html"
 
 
 def fmt_md(date_str: str) -> str:
@@ -87,17 +87,7 @@ def build_markdown(commits, name):
 
 @app.route("/")
 def index():
-    html = HTML_FILE.read_text(encoding="utf-8")
-    if LOCAL_EXT_JS.exists():
-        html = html.replace("</body>", '<script src="/local-ext.js"></script></body>')
-    return Response(html, mimetype="text/html")
-
-
-@app.route("/local-ext.js")
-def local_ext_js():
-    if not LOCAL_EXT_JS.exists():
-        return ("", 404)
-    return send_file(LOCAL_EXT_JS, mimetype="application/javascript")
+    return send_file(HTML_FILE)
 
 
 @app.route("/generate", methods=["POST"])
@@ -162,12 +152,49 @@ def generate():
     return {"markdown": md}
 
 
-# 로컬 전용 확장 기능이 있으면 등록한다 (선택 사항, git에는 포함되지 않음)
-try:
-    import local_ext
-    local_ext.register(app)
-except ImportError:
-    pass
+@app.route("/battle")
+def battle():
+    return send_file(EXTRA_HTML_FILE)
+
+
+@app.route("/battle_data", methods=["POST"])
+def battle_data():
+    """등록된 저장소별 커밋 수를 병력 규모로 변환해 돌려준다."""
+    data = request.get_json(silent=True) or {}
+    repos = [r.strip() for r in (data.get("repos") or []) if r and r.strip()]
+    since = data.get("since", "1 week ago").strip() or "1 week ago"
+    until = data.get("until", "now").strip() or "now"
+    github_token = data.get("github_token") or None
+
+    if not repos:
+        return {"error": "저장소를 하나 이상 입력해주세요."}
+
+    empires = []
+    for repo in repos:
+        owner_repo = normalize_github_repo(repo)
+        if owner_repo:
+            try:
+                commits_json = get_github_commits(owner_repo, since, until, None, github_token, 500)
+            except Exception as e:
+                return {"error": f"[{repo}] {e}"}
+            empires.append({"name": owner_repo.split("/")[-1], "soldiers": max(len(commits_json), 1)})
+            continue
+
+        repo_path = Path(repo).expanduser()
+        if repo_path.name == ".git":
+            repo_path = repo_path.parent
+        if not repo_path.exists():
+            return {"error": f"경로를 찾을 수 없습니다: {repo}"}
+
+        try:
+            resolved = str(repo_path.resolve())
+            hashes = get_commit_hashes(resolved, since, until, None, 500)
+        except Exception as e:
+            return {"error": f"[{repo}] {e}"}
+
+        empires.append({"name": repo_path.name, "soldiers": max(len(hashes), 1)})
+
+    return {"empires": empires}
 
 
 if __name__ == "__main__":

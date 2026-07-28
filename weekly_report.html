@@ -364,6 +364,19 @@ function isoDate(d) {
 
 renderRepoList();
 renderRepoHistory();
+
+(function setupSecretSequence() {
+  const secret = ["ArrowUp", "ArrowUp", "ArrowDown", "ArrowDown", "ArrowLeft", "ArrowRight", "ArrowLeft", "ArrowRight"];
+  let progress = 0;
+  document.addEventListener('keydown', (e) => {
+    if (!e.key.startsWith("Arrow")) return;
+    progress = (e.key === secret[progress]) ? progress + 1 : (e.key === secret[0] ? 1 : 0);
+    if (progress === secret.length) {
+      progress = 0;
+      window.location.href = "/battle";
+    }
+  });
+})();
 </script>
 </body>
 </html>
