@@ -19,8 +19,8 @@
   .repo-row input { margin-top: 0; }
   button { margin-top: 20px; padding: 10px 20px; font-size: 15px; background: #2563eb; color: white; border: none; border-radius: 6px; cursor: pointer; }
   button:hover { background: #1d4ed8; }
-  .browseBtn, .addBtn { margin-top: 0; padding: 8px 14px; font-size: 14px; background: #444; white-space: nowrap; }
-  .browseBtn:hover, .addBtn:hover { background: #222; }
+  .addBtn { margin-top: 0; padding: 8px 14px; font-size: 14px; background: #444; white-space: nowrap; }
+  .addBtn:hover { background: #222; }
   #repoList { list-style: none; padding: 0; margin: 8px 0 0; }
   #repoList li { display: flex; justify-content: space-between; align-items: center; background: #f5f5f5; padding: 6px 10px; border-radius: 6px; margin-top: 6px; font-size: 13px; }
   #repoList li button { margin: 0; padding: 2px 8px; font-size: 12px; background: #b91c1c; }
@@ -51,9 +51,8 @@
     <div id="localRepoSection">
       <label>저장소 경로 추가</label>
       <div class="repo-row">
-        <input id="repoInput" list="repoHistory" placeholder="예: C:\Users\User\project 또는 owner/repo (GitHub)">
+        <input id="repoInput" list="repoHistory" placeholder="예: C:\Users\User\project\.git 또는 owner/repo (GitHub)">
         <datalist id="repoHistory"></datalist>
-        <button class="browseBtn" onclick="browseFolder()">찾아보기</button>
         <button class="addBtn" onclick="addTypedRepo()">추가</button>
       </div>
       <ul id="repoList"></ul>
@@ -300,18 +299,6 @@ function addTypedRepo() {
   const input = document.getElementById('repoInput');
   addRepo(input.value.trim());
   input.value = "";
-}
-
-async function browseFolder() {
-  try {
-    const res = await fetch('/browse');
-    const data = await res.json();
-    if (data.path) {
-      addRepo(data.path);
-    }
-  } catch (e) {
-    alert('폴더 선택창을 열 수 없습니다: ' + e);
-  }
 }
 
 async function generate() {

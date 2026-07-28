@@ -98,23 +98,6 @@ def local_ext_js():
     return send_file(LOCAL_EXT_JS, mimetype="application/javascript")
 
 
-@app.route("/browse")
-def browse():
-    """네이티브 폴더 선택창을 띄운다 (로컬 실행 전용)."""
-    try:
-        import tkinter as tk
-        from tkinter import filedialog
-
-        root = tk.Tk()
-        root.withdraw()
-        root.attributes("-topmost", True)
-        path = filedialog.askdirectory(title="git 저장소 폴더 선택")
-        root.destroy()
-        return {"path": path or None}
-    except Exception as e:
-        return {"path": None, "error": str(e)}
-
-
 @app.route("/generate", methods=["POST"])
 def generate():
     data = request.get_json(silent=True) or {}
