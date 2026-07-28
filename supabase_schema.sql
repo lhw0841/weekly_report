@@ -34,3 +34,20 @@ create policy "insert own reports" on reports
   for insert with check (auth.uid() = user_id);
 create policy "delete own reports" on reports
   for delete using (auth.uid() = user_id);
+
+-- 사용자별 설정 (표시 이름, 기본 조회 기간 등 기억)
+create table if not exists user_settings (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  display_name text,
+  default_range_days integer,
+  updated_at timestamptz default now()
+);
+
+alter table user_settings enable row level security;
+
+create policy "select own settings" on user_settings
+  for select using (auth.uid() = user_id);
+create policy "insert own settings" on user_settings
+  for insert with check (auth.uid() = user_id);
+create policy "update own settings" on user_settings
+  for update using (auth.uid() = user_id);

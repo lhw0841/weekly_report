@@ -222,6 +222,7 @@ function renderAuthBar(session) {
     if (!wasLoggedIn) {
       syncReposOnLogin();
       loadReportHistory();
+      loadUserSettings();
     }
   } else {
     bar.innerHTML = "";
@@ -408,6 +409,51 @@ function addTypedRepo() {
   input.value = "";
 }
 
+// ---------- 사용자 설정 (표시 이름, 기본 조회 기간) ----------
+
+async function loadUserSettings() {
+  const { data, error } = await supabaseClient
+    .from('user_settings')
+    .select('display_name, default_range_days')
+    .eq('user_id', currentSession.user.id)
+    .maybeSingle();
+  if (error) {
+    console.error('설정 조회 실패', error);
+    return;
+  }
+  if (!data) return;
+
+  if (data.display_name) {
+    document.getElementById('name').value = data.display_name;
+  }
+  if (data.default_range_days) {
+    const today = new Date();
+    const start = new Date();
+    start.setDate(today.getDate() - data.default_range_days);
+    document.getElementById('since').value = isoDate(start);
+    document.getElementById('until').value = isoDate(today);
+  }
+}
+
+async function saveUserSettings(name, sinceStr, untilStr) {
+  const since = new Date(sinceStr);
+  const until = new Date(untilStr);
+  const rangeDays = (isFinite(since) && isFinite(until))
+    ? Math.max(1, Math.round((until - since) / 86400000))
+    : null;
+
+  try {
+    await supabaseClient.from('user_settings').upsert({
+      user_id: currentSession.user.id,
+      display_name: name || null,
+      default_range_days: rangeDays,
+      updated_at: new Date().toISOString(),
+    });
+  } catch (e) {
+    console.error('설정 저장 실패', e);
+  }
+}
+
 async function generate() {
   const since = document.getElementById('since').value;
   const untilRaw = document.getElementById('until').value;
@@ -443,7 +489,10 @@ async function generate() {
     lastMarkdown = data.markdown;
     result.innerHTML = marked.parse(data.markdown);
     document.getElementById('downloadBtn').style.display = 'inline-block';
-    if (currentSession) saveReportToCloud(data.markdown, since, until);
+    if (currentSession) {
+      saveReportToCloud(data.markdown, since, until);
+      saveUserSettings(name, since, untilRaw);
+    }
   } catch (e) {
     result.innerHTML = '<p class="error">오류: ' + e + '</p>';
   }
