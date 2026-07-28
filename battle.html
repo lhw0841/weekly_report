@@ -40,10 +40,12 @@ const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_
 const COLORS = [0xef4444, 0x3b82f6, 0xf59e0b, 0xa855f7, 0x06b6d4, 0xec4899, 0xeab308, 0x22c55e];
 const MAX_UNITS_PER_EMPIRE = 40; // 성능을 위한 상한
 const UNIT_SPEED = 1.6;          // 초당 이동 거리
-const COLLIDE_DIST = 0.55;
-const CASTLE_ASSAULT_DIST = 2.3;
+const COLLIDE_DIST = 0.4;
 const BATTLEFIELD_RADIUS = 11;
 const CASTLE_RADIUS = BATTLEFIELD_RADIUS + 3;
+const ENGAGE_RADIUS = 3.2;       // 중앙에서 이 거리 안으로 들어오면 전투 대형(난전)으로 전환
+const WANDER_RADIUS = 2.6;       // 난전 중 배회 범위
+const WANDER_SPEED = 0.9;        // 난전 중 이동 속도
 
 const MAX_BATTLE_SECONDS = 90; // 병사들이 서로 못 만나고 떠도는 경우를 대비한 안전장치
 
@@ -143,11 +145,17 @@ function buildCastle(color, homePos) {
   return group;
 }
 
+function pickWanderTarget() {
+  const r = Math.random() * WANDER_RADIUS;
+  const a = Math.random() * Math.PI * 2;
+  return new THREE.Vector3(Math.cos(a) * r, 0.16, Math.sin(a) * r);
+}
+
 function spawnUnits(empireIndex, color, homePos, count) {
   const dirToCenter = homePos.clone().negate().normalize();
   const perRow = Math.ceil(Math.sqrt(count));
   const mat = new THREE.MeshStandardMaterial({ color });
-  const geo = new THREE.BoxGeometry(0.4, 0.4, 0.4);
+  const geo = new THREE.SphereGeometry(0.2, 12, 10);
 
   // 진군 방향에 수직인 축(측면으로 대열을 펼치기 위함)
   const side = new THREE.Vector3(-dirToCenter.z, 0, dirToCenter.x);
@@ -160,7 +168,7 @@ function spawnUnits(empireIndex, color, homePos, count) {
     const spawnPos = homePos.clone()
       .addScaledVector(dirToCenter, 1.8 + row * 0.55)
       .addScaledVector(side, col * 0.5);
-    spawnPos.y = 0.2;
+    spawnPos.y = 0.16;
     mesh.position.copy(spawnPos);
     scene.add(mesh);
 
@@ -170,6 +178,8 @@ function spawnUnits(empireIndex, color, homePos, count) {
       dir: dirToCenter.clone(),
       cooldown: 0,
       alive: true,
+      engaged: false,
+      wanderTarget: null,
     });
   }
 }
@@ -229,21 +239,6 @@ function resolveEliminations() {
   });
 }
 
-function resolveCastleAssaults() {
-  units.forEach(u => {
-    if (!u.alive) return;
-    empires.forEach((target, j) => {
-      if (j === u.empireIndex || !target.castleAlive) return;
-      if (u.mesh.position.distanceTo(target.homePos) < CASTLE_ASSAULT_DIST) {
-        const attacker = empires[u.empireIndex];
-        collapseCastle(target);
-        killUnit(u);
-        log(`🔥 ${attacker.name} 병사가 ${target.name}의 성을 함락시켰습니다!`);
-      }
-    });
-  });
-}
-
 function declareWinner(empire) {
   battleOver = true;
   if (empire) {
@@ -276,10 +271,25 @@ function animate() {
   if (dt > 0) {
     elapsed += dt;
 
-    // 이동
+    // 이동: 중앙으로 진군하다가, 중앙 근처에 도달하면 난전 대형으로 전환해 계속 배회하며 싸운다
     units.forEach(u => {
       if (!u.alive) return;
-      u.mesh.position.addScaledVector(u.dir, UNIT_SPEED * dt);
+
+      if (!u.engaged) {
+        u.mesh.position.addScaledVector(u.dir, UNIT_SPEED * dt);
+        if (u.mesh.position.length() < ENGAGE_RADIUS) {
+          u.engaged = true;
+          u.wanderTarget = pickWanderTarget();
+        }
+      } else {
+        const toTarget = u.wanderTarget.clone().sub(u.mesh.position);
+        if (toTarget.length() < 0.3) {
+          u.wanderTarget = pickWanderTarget();
+        } else {
+          u.mesh.position.addScaledVector(toTarget.normalize(), WANDER_SPEED * dt);
+        }
+      }
+
       if (u.cooldown > 0) u.cooldown -= dt;
       u.mesh.rotation.y += dt * 2;
     });
@@ -302,7 +312,6 @@ function animate() {
       }
     }
 
-    resolveCastleAssaults();
     resolveEliminations();
     updateLegend();
     checkVictory();
@@ -314,7 +323,7 @@ function animate() {
 async function loginWithGithub() {
   await supabaseClient.auth.signInWithOAuth({
     provider: 'github',
-    options: { redirectTo: window.location.href }
+    options: { redirectTo: window.location.href, scopes: 'repo read:org' }
   });
 }
 

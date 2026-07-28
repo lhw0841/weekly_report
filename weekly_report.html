@@ -133,7 +133,7 @@ function renderAuthBar(session) {
 async function loginWithGithub() {
   await supabaseClient.auth.signInWithOAuth({
     provider: 'github',
-    options: { redirectTo: window.location.origin }
+    options: { redirectTo: window.location.origin, scopes: 'repo read:org' }
   });
 }
 
