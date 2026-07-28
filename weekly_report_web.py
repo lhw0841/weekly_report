@@ -23,6 +23,7 @@ from weekly_report_core import get_commit_hashes, get_commit_info
 
 app = Flask(__name__)
 HTML_FILE = Path(__file__).parent / "weekly_report.html"
+LOCAL_EXT_JS = Path(__file__).parent / "local_ext.js"
 
 
 def fmt_md(date_str: str) -> str:
@@ -77,7 +78,17 @@ def build_markdown(commits, name):
 
 @app.route("/")
 def index():
-    return send_file(HTML_FILE)
+    html = HTML_FILE.read_text(encoding="utf-8")
+    if LOCAL_EXT_JS.exists():
+        html = html.replace("</body>", '<script src="/local-ext.js"></script></body>')
+    return Response(html, mimetype="text/html")
+
+
+@app.route("/local-ext.js")
+def local_ext_js():
+    if not LOCAL_EXT_JS.exists():
+        return ("", 404)
+    return send_file(LOCAL_EXT_JS, mimetype="application/javascript")
 
 
 @app.route("/browse")
@@ -134,6 +145,14 @@ def generate():
 
     md = build_markdown(all_commits, name)
     return {"markdown": md}
+
+
+# 로컬 전용 확장 기능이 있으면 등록한다 (선택 사항, git에는 포함되지 않음)
+try:
+    import local_ext
+    local_ext.register(app)
+except ImportError:
+    pass
 
 
 if __name__ == "__main__":

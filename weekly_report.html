@@ -4,9 +4,15 @@
 <meta charset="UTF-8">
 <title>주간 업무보고 커밋 내역 생성기</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/11.1.1/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <style>
   body { font-family: -apple-system, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 16px; color: #222; }
   h1 { font-size: 22px; }
+  #authBar { display: flex; justify-content: flex-end; align-items: center; gap: 10px; padding: 10px 0; font-size: 13px; color: #555; }
+  #authBar img { width: 24px; height: 24px; border-radius: 50%; }
+  #authBar button { margin: 0; padding: 6px 12px; font-size: 13px; background: #24292f; }
+  #authBar button:hover { background: #000; }
+  #loggedOutNotice { color: #888; font-size: 13px; margin-top: 4px; }
   label { display: block; margin-top: 12px; font-size: 14px; font-weight: 600; }
   input { width: 100%; padding: 8px; margin-top: 4px; box-sizing: border-box; font-size: 14px; }
   .repo-row { display: flex; gap: 8px; margin-top: 4px; }
@@ -30,34 +36,91 @@
 </style>
 </head>
 <body>
+  <div id="authBar"></div>
+
   <h1>주간 업무보고 커밋 내역 생성기</h1>
   <p>여러 git 저장소의 최근 커밋을 한번에 모아 보고서 초안을 만들어줍니다.</p>
+  <p id="loggedOutNotice">(선택) GitHub로 로그인하면 추후 클라우드 저장 등 부가 기능을 이용할 수 있습니다.</p>
 
-  <label>저장소 경로 추가</label>
-  <div class="repo-row">
-    <input id="repoInput" list="repoHistory" placeholder="예: C:\Users\User\project">
-    <datalist id="repoHistory"></datalist>
-    <button class="browseBtn" onclick="browseFolder()">찾아보기</button>
-    <button class="addBtn" onclick="addTypedRepo()">추가</button>
+  <div id="mainApp">
+    <label>저장소 경로 추가</label>
+    <div class="repo-row">
+      <input id="repoInput" list="repoHistory" placeholder="예: C:\Users\User\project">
+      <datalist id="repoHistory"></datalist>
+      <button class="browseBtn" onclick="browseFolder()">찾아보기</button>
+      <button class="addBtn" onclick="addTypedRepo()">추가</button>
+    </div>
+    <ul id="repoList"></ul>
+
+    <label>시작 날짜</label>
+    <input id="since" type="date">
+
+    <label>종료 날짜</label>
+    <input id="until" type="date">
+
+    <label>작성자 (git author, 선택)</label>
+    <input id="author" placeholder="비워두면 전체">
+
+    <label>보고서에 표시할 이름 (선택)</label>
+    <input id="name" placeholder="예: 홍길동 (비워두면 git 작성자명 사용)">
+
+    <button onclick="generate()">생성</button>
+    <button id="downloadBtn" onclick="download()">Markdown 다운로드</button>
+
+    <div id="result"></div>
   </div>
-  <ul id="repoList"></ul>
 
-  <label>시작 날짜</label>
-  <input id="since" type="date">
+<script>
+const SUPABASE_URL = "https://wjctfmiafwvypmwtnpkn.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndqY3RmbWlhZnd2eXBtd3RucGtuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUxOTEwNDIsImV4cCI6MjEwMDc2NzA0Mn0.hy62BJuf6u-CaLj52wFjOd4RVYPIAtV6cNhIa25W6cg";
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-  <label>종료 날짜</label>
-  <input id="until" type="date">
+function renderAuthBar(session) {
+  const bar = document.getElementById('authBar');
+  const notice = document.getElementById('loggedOutNotice');
 
-  <label>작성자 (git author, 선택)</label>
-  <input id="author" placeholder="비워두면 전체">
+  if (session && session.user) {
+    const meta = session.user.user_metadata || {};
+    const avatar = meta.avatar_url ? `<img src="${meta.avatar_url}" alt="avatar">` : "";
+    const displayName = meta.user_name || meta.full_name || session.user.email || "사용자";
+    bar.innerHTML = `${avatar}<span>${displayName}님</span>`;
+    const logoutBtn = document.createElement('button');
+    logoutBtn.textContent = '로그아웃';
+    logoutBtn.onclick = logout;
+    bar.appendChild(logoutBtn);
 
-  <label>보고서에 표시할 이름 (선택)</label>
-  <input id="name" placeholder="예: 홍길동 (비워두면 git 작성자명 사용)">
+    notice.style.display = 'none';
+  } else {
+    bar.innerHTML = "";
+    const loginBtn = document.createElement('button');
+    loginBtn.textContent = 'GitHub로 로그인';
+    loginBtn.onclick = loginWithGithub;
+    bar.appendChild(loginBtn);
 
-  <button onclick="generate()">생성</button>
-  <button id="downloadBtn" onclick="download()">Markdown 다운로드</button>
+    notice.style.display = 'block';
+  }
+}
 
-  <div id="result"></div>
+async function loginWithGithub() {
+  await supabaseClient.auth.signInWithOAuth({
+    provider: 'github',
+    options: { redirectTo: window.location.origin }
+  });
+}
+
+async function logout() {
+  await supabaseClient.auth.signOut();
+}
+
+supabaseClient.auth.onAuthStateChange((_event, session) => {
+  renderAuthBar(session);
+});
+
+(async function initAuth() {
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  renderAuthBar(session);
+})();
+</script>
 
 <script>
 let lastMarkdown = "";
