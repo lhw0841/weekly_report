@@ -45,7 +45,7 @@
   <div id="mainApp">
     <label>저장소 경로 추가</label>
     <div class="repo-row">
-      <input id="repoInput" list="repoHistory" placeholder="예: C:\Users\User\project">
+      <input id="repoInput" list="repoHistory" placeholder="예: C:\Users\User\project 또는 owner/repo (GitHub)">
       <datalist id="repoHistory"></datalist>
       <button class="browseBtn" onclick="browseFolder()">찾아보기</button>
       <button class="addBtn" onclick="addTypedRepo()">추가</button>
@@ -74,8 +74,10 @@
 const SUPABASE_URL = "https://wjctfmiafwvypmwtnpkn.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndqY3RmbWlhZnd2eXBtd3RucGtuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUxOTEwNDIsImV4cCI6MjEwMDc2NzA0Mn0.hy62BJuf6u-CaLj52wFjOd4RVYPIAtV6cNhIa25W6cg";
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+let currentSession = null;
 
 function renderAuthBar(session) {
+  currentSession = session;
   const bar = document.getElementById('authBar');
   const notice = document.getElementById('loggedOutNotice');
 
@@ -216,10 +218,11 @@ async function generate() {
   result.innerHTML = "생성 중...";
 
   try {
+    const githubToken = currentSession?.provider_token || null;
     const res = await fetch('/generate', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({repos, since, until, author, name})
+      body: JSON.stringify({repos, since, until, author, name, github_token: githubToken})
     });
     const data = await res.json();
     if (data.error) {

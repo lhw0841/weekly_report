@@ -20,6 +20,7 @@ from pathlib import Path
 from flask import Flask, request, Response, send_file
 
 from weekly_report_core import get_commit_hashes, get_commit_info
+from weekly_report_github import get_github_commits, github_commit_to_info, is_github_repo
 
 app = Flask(__name__)
 HTML_FILE = Path(__file__).parent / "weekly_report.html"
@@ -123,12 +124,22 @@ def generate():
     until = data.get("until", "now").strip() or "now"
     author = data.get("author", "").strip() or None
     name = data.get("name", "").strip() or None
+    github_token = data.get("github_token") or None
 
     if not repos:
         return {"error": "저장소 경로를 하나 이상 입력해주세요."}
 
     all_commits = []
     for repo in repos:
+        if is_github_repo(repo):
+            try:
+                commits_json = get_github_commits(repo, since, until, author, github_token, 30)
+            except Exception as e:
+                return {"error": f"[{repo}] {e}"}
+            label = repo.split("/")[-1]
+            all_commits += [github_commit_to_info(c, label) for c in commits_json]
+            continue
+
         repo_path = Path(repo).expanduser()
         if repo_path.name == ".git":
             repo_path = repo_path.parent
