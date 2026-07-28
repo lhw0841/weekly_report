@@ -20,7 +20,13 @@ from pathlib import Path
 from flask import Flask, request, Response, send_file
 
 from weekly_report_core import get_commit_hashes, get_commit_info
-from weekly_report_github import get_github_commits, github_commit_to_info, is_github_repo
+from weekly_report_github import (
+    get_authenticated_username,
+    get_github_commits,
+    github_commit_to_info,
+    is_github_repo,
+    search_user_commits,
+)
 
 app = Flask(__name__)
 HTML_FILE = Path(__file__).parent / "weekly_report.html"
@@ -125,6 +131,18 @@ def generate():
     author = data.get("author", "").strip() or None
     name = data.get("name", "").strip() or None
     github_token = data.get("github_token") or None
+    mode = data.get("mode") or None
+
+    if mode == "github_auto":
+        if not github_token:
+            return {"error": "GitHub 로그인이 필요합니다."}
+        try:
+            username = get_authenticated_username(github_token)
+            commits_json = search_user_commits(username, since, until, github_token, 50)
+        except Exception as e:
+            return {"error": str(e)}
+        md = build_markdown(commits_json, name or username)
+        return {"markdown": md}
 
     if not repos:
         return {"error": "저장소 경로를 하나 이상 입력해주세요."}

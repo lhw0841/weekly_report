@@ -48,23 +48,26 @@
   <p id="loggedOutNotice">(선택) GitHub로 로그인하면 추후 클라우드 저장 등 부가 기능을 이용할 수 있습니다.</p>
 
   <div id="mainApp">
-    <label>저장소 경로 추가</label>
-    <div class="repo-row">
-      <input id="repoInput" list="repoHistory" placeholder="예: C:\Users\User\project 또는 owner/repo (GitHub)">
-      <datalist id="repoHistory"></datalist>
-      <button class="browseBtn" onclick="browseFolder()">찾아보기</button>
-      <button class="addBtn" onclick="addTypedRepo()">추가</button>
+    <div id="localRepoSection">
+      <label>저장소 경로 추가</label>
+      <div class="repo-row">
+        <input id="repoInput" list="repoHistory" placeholder="예: C:\Users\User\project 또는 owner/repo (GitHub)">
+        <datalist id="repoHistory"></datalist>
+        <button class="browseBtn" onclick="browseFolder()">찾아보기</button>
+        <button class="addBtn" onclick="addTypedRepo()">추가</button>
+      </div>
+      <ul id="repoList"></ul>
+
+      <label>작성자 (git author, 선택)</label>
+      <input id="author" placeholder="비워두면 전체">
     </div>
-    <ul id="repoList"></ul>
+    <p id="githubAutoNotice" style="display:none; color:#888; font-size:13px; margin-top:12px;">GitHub 로그인 상태이므로, 접근 가능한 모든 저장소에서 아래 기간 동안 작성한 본인 커밋을 자동으로 가져옵니다.</p>
 
     <label>시작 날짜</label>
     <input id="since" type="date">
 
     <label>종료 날짜</label>
     <input id="until" type="date">
-
-    <label>작성자 (git author, 선택)</label>
-    <input id="author" placeholder="비워두면 전체">
 
     <label>보고서에 표시할 이름 (선택)</label>
     <input id="name" placeholder="예: 홍길동 (비워두면 git 작성자명 사용)">
@@ -92,6 +95,8 @@ function renderAuthBar(session) {
   const bar = document.getElementById('authBar');
   const notice = document.getElementById('loggedOutNotice');
   const historySection = document.getElementById('historySection');
+  const localRepoSection = document.getElementById('localRepoSection');
+  const githubAutoNotice = document.getElementById('githubAutoNotice');
 
   if (session && session.user) {
     const meta = session.user.user_metadata || {};
@@ -105,6 +110,8 @@ function renderAuthBar(session) {
 
     notice.style.display = 'none';
     historySection.style.display = 'block';
+    localRepoSection.style.display = 'none';
+    githubAutoNotice.style.display = 'block';
 
     if (!wasLoggedIn) {
       syncReposOnLogin();
@@ -119,6 +126,8 @@ function renderAuthBar(session) {
 
     notice.style.display = 'block';
     historySection.style.display = 'none';
+    localRepoSection.style.display = 'block';
+    githubAutoNotice.style.display = 'none';
   }
 }
 
@@ -313,8 +322,9 @@ async function generate() {
   const author = document.getElementById('author').value;
   const name = document.getElementById('name').value;
   const result = document.getElementById('result');
+  const githubToken = currentSession?.provider_token || null;
 
-  if (repos.length === 0) {
+  if (!githubToken && repos.length === 0) {
     result.innerHTML = '<p class="error">저장소를 하나 이상 추가해주세요.</p>';
     return;
   }
@@ -322,11 +332,13 @@ async function generate() {
   result.innerHTML = "생성 중...";
 
   try {
-    const githubToken = currentSession?.provider_token || null;
+    const body = githubToken
+      ? { mode: 'github_auto', since, until, name, github_token: githubToken }
+      : { repos, since, until, author, name };
     const res = await fetch('/generate', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({repos, since, until, author, name, github_token: githubToken})
+      body: JSON.stringify(body)
     });
     const data = await res.json();
     if (data.error) {

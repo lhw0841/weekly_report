@@ -66,6 +66,49 @@ def get_github_commits(owner_repo: str, since: str, until: str, author: str | No
     return resp.json()[:max_commits]
 
 
+def get_authenticated_username(token: str) -> str:
+    """로그인한 사용자의 GitHub 로그인 아이디를 가져온다."""
+    resp = requests.get(
+        f"{GITHUB_API}/user",
+        headers={"Accept": "application/vnd.github+json", "Authorization": f"Bearer {token}"},
+        timeout=15,
+    )
+    if resp.status_code != 200:
+        raise RuntimeError("GitHub 로그인 정보를 확인할 수 없습니다. 다시 로그인해주세요.")
+    return resp.json()["login"]
+
+
+def search_user_commits(username: str, since: str, until: str, token: str, max_commits: int) -> list[dict]:
+    """로그인한 사용자가 접근 가능한 모든 저장소에서, 기간 내 본인 커밋을 검색한다."""
+    since_iso = _to_iso8601(since)
+    until_iso = _to_iso8601(until)
+    date_range = f"{since_iso or '*'}..{until_iso or '*'}"
+
+    headers = {"Accept": "application/vnd.github+json", "Authorization": f"Bearer {token}"}
+    params = {
+        "q": f"author:{username} author-date:{date_range}",
+        "sort": "author-date",
+        "order": "desc",
+        "per_page": min(max_commits, 100),
+    }
+    resp = requests.get(f"{GITHUB_API}/search/commits", headers=headers, params=params, timeout=15)
+    if resp.status_code != 200:
+        message = "알 수 없는 오류"
+        try:
+            message = resp.json().get("message", message)
+        except ValueError:
+            pass
+        raise RuntimeError(f"GitHub 커밋 검색 실패: {message}")
+
+    items = resp.json().get("items", [])[:max_commits]
+    results = []
+    for item in items:
+        repo_label = (item.get("repository") or {}).get("name", "?")
+        info = github_commit_to_info(item, repo_label)
+        results.append(info)
+    return results
+
+
 def github_commit_to_info(commit_json: dict, repo_label: str) -> dict:
     commit = commit_json.get("commit", {})
     author_info = commit.get("author") or {}
