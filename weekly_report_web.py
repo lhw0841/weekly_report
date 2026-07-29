@@ -42,14 +42,15 @@ def fmt_md(date_str: str) -> str:
     return f"{dt.month}.{dt.day}"
 
 
-def build_markdown(commits, name):
+def build_markdown(commits, name, period_since=None, period_until=None):
     if not commits:
         return "해당 기간에 커밋이 없습니다. 저장소 경로/기간/작성자 값을 확인해주세요.\n"
 
     # commits는 최신순으로 들어오므로 날짜 오름차순으로 정렬
     ordered = sorted(commits, key=lambda c: c["date"])
-    start_date = ordered[0]["date"]
-    end_date = ordered[-1]["date"]
+    # "금주 업무 내용" 기간은 실제 조회 요청 기간을 기준으로 한다 (커밋이 며칠에 몰려있어도 기간 전체를 보여줌).
+    start_date = (period_since or "")[:10] or ordered[0]["date"]
+    end_date = (period_until or "")[:10] or ordered[-1]["date"]
 
     end_dt = datetime.strptime(end_date, "%Y-%m-%d")
     next_start_dt = end_dt + timedelta(days=1)
@@ -115,7 +116,7 @@ def generate():
             commits_json = search_user_commits(username, since, until, github_token, 50)
         except Exception as e:
             return {"error": str(e)}
-        md = build_markdown(commits_json, name or username)
+        md = build_markdown(commits_json, name or username, since, until)
         return {"markdown": md}
 
     if not repos:
@@ -147,7 +148,7 @@ def generate():
         except Exception as e:
             return {"error": f"[{repo}] {e}"}
 
-    md = build_markdown(all_commits, name)
+    md = build_markdown(all_commits, name, since, until)
     return {"markdown": md}
 
 
