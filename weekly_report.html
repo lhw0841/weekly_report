@@ -427,7 +427,7 @@ function addTypedRepo() {
 async function loadUserSettings() {
   const { data, error } = await supabaseClient
     .from('user_settings')
-    .select('display_name, default_range_days')
+    .select('display_name')
     .eq('user_id', currentSession.user.id)
     .maybeSingle();
   if (error) {
@@ -439,27 +439,14 @@ async function loadUserSettings() {
   if (data.display_name) {
     document.getElementById('name').value = data.display_name;
   }
-  if (data.default_range_days) {
-    const today = new Date();
-    const start = new Date();
-    start.setDate(today.getDate() - data.default_range_days);
-    document.getElementById('since').value = isoDate(start);
-    document.getElementById('until').value = isoDate(today);
-  }
+  // 시작/종료 날짜는 항상 "이번 주 월요일 ~ 오늘"이 기본값이라 여기서 덮어쓰지 않는다.
 }
 
-async function saveUserSettings(name, sinceStr, untilStr) {
-  const since = new Date(sinceStr);
-  const until = new Date(untilStr);
-  const rangeDays = (isFinite(since) && isFinite(until))
-    ? Math.max(1, Math.round((until - since) / 86400000))
-    : null;
-
+async function saveUserSettings(name) {
   try {
     await supabaseClient.from('user_settings').upsert({
       user_id: currentSession.user.id,
       display_name: name || null,
-      default_range_days: rangeDays,
       updated_at: new Date().toISOString(),
     });
   } catch (e) {
@@ -504,7 +491,7 @@ async function generate() {
     document.getElementById('downloadBtn').style.display = 'inline-block';
     if (currentSession) {
       saveReportToCloud(data.markdown, since, until);
-      saveUserSettings(name, since, untilRaw);
+      saveUserSettings(name);
     }
   } catch (e) {
     result.innerHTML = '<p class="error">오류: ' + e + '</p>';

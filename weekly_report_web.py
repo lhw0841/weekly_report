@@ -55,14 +55,12 @@ def build_markdown(commits, name):
     next_start_dt = end_dt + timedelta(days=1)
     next_end_dt = end_dt + timedelta(days=5)
 
-    multi_repo = len({c.get("repo") for c in ordered}) > 1
-
     out = []
 
     # 1) 참고용: 이번 주 커밋 내역 (근거 자료)
     out.append("## 이번 주 커밋 내역 (참고)\n")
     for c in ordered:
-        prefix = f"[{c['repo']}] " if multi_repo else ""
+        prefix = f"[{c['repo']}] " if c.get("repo") else ""
         out.append(f"- {prefix}`{c['hash']}` {c['date']} - {c['subject']} (작성자: {c['author']})")
     out.append("")
     out.append("---")
@@ -73,7 +71,7 @@ def build_markdown(commits, name):
     out.append(f"# 주간보고 _ {display_name} (참고)\n")
     out.append(f"**금주 업무 내용 : {fmt_md(start_date)}~{fmt_md(end_date)}**\n")
     for i, c in enumerate(ordered, 1):
-        prefix = f"[{c['repo']}] " if multi_repo else ""
+        prefix = f"[{c['repo']}] " if c.get("repo") else ""
         out.append(f"{i}. {prefix}{c['subject']}")
     out.append("")
     out.append(f"**차주 업무 내용 : {fmt_md(next_start_dt.strftime('%Y-%m-%d'))}~{fmt_md(next_end_dt.strftime('%Y-%m-%d'))}**\n")
