@@ -195,6 +195,14 @@ const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 let currentSession = null;
 
+// Supabase는 새로고침 후에는 provider_token(GitHub 액세스 토큰)을 다시 내려주지 않으므로,
+// 로그인 직후에만 받아지는 토큰을 별도로 저장해두고 재사용한다.
+const GITHUB_TOKEN_KEY = "wr_github_token";
+
+function getGithubToken() {
+  return currentSession?.provider_token || localStorage.getItem(GITHUB_TOKEN_KEY) || null;
+}
+
 function renderAuthBar(session) {
   const wasLoggedIn = !!currentSession;
   currentSession = session;
@@ -205,6 +213,10 @@ function renderAuthBar(session) {
   const githubAutoNotice = document.getElementById('githubAutoNotice');
 
   if (session && session.user) {
+    if (session.provider_token) {
+      localStorage.setItem(GITHUB_TOKEN_KEY, session.provider_token);
+    }
+
     const meta = session.user.user_metadata || {};
     const avatar = meta.avatar_url ? `<img src="${meta.avatar_url}" alt="avatar">` : "";
     const displayName = meta.user_name || meta.full_name || session.user.email || "사용자";
@@ -247,6 +259,7 @@ async function loginWithGithub() {
 
 async function logout() {
   await supabaseClient.auth.signOut();
+  localStorage.removeItem(GITHUB_TOKEN_KEY);
 }
 
 supabaseClient.auth.onAuthStateChange((_event, session) => {
@@ -462,7 +475,7 @@ async function generate() {
   const author = document.getElementById('author').value;
   const name = document.getElementById('name').value;
   const result = document.getElementById('result');
-  const githubToken = currentSession?.provider_token || null;
+  const githubToken = getGithubToken();
 
   if (!githubToken && repos.length === 0) {
     result.innerHTML = '<p class="error">저장소를 하나 이상 추가해주세요.</p>';
@@ -512,9 +525,11 @@ function isoDate(d) {
 
 (function setDefaultDates() {
   const today = new Date();
-  const weekAgo = new Date();
-  weekAgo.setDate(today.getDate() - 7);
-  document.getElementById('since').value = isoDate(weekAgo);
+  const monday = new Date(today);
+  const dayOfWeek = today.getDay(); // 0=일 1=월 ... 6=토
+  const daysSinceMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+  monday.setDate(today.getDate() - daysSinceMonday);
+  document.getElementById('since').value = isoDate(monday);
   document.getElementById('until').value = isoDate(today);
 })();
 

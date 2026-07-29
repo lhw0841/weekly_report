@@ -451,9 +451,14 @@ async function loginWithGithub() {
   });
 }
 
+const GITHUB_TOKEN_KEY = "wr_github_token";
+
 async function loadEmpires() {
   const { data: { session } } = await supabaseClient.auth.getSession();
-  const githubToken = session?.provider_token || null;
+  if (session?.provider_token) {
+    localStorage.setItem(GITHUB_TOKEN_KEY, session.provider_token);
+  }
+  const githubToken = session?.provider_token || localStorage.getItem(GITHUB_TOKEN_KEY) || null;
 
   if (!githubToken) {
     document.getElementById('status').style.display = 'none';
